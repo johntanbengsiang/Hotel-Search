@@ -73,10 +73,10 @@ GL_COUNTRY_CODE = {
     "mv":"MV","au":"AU","nz":"NZ","za":"ZA","ma":"MA",
 }
 
-def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg"):
+def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=2):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, 1], None, token, currency]),
+        json.dumps([None, [start, end, guests], None, token, currency]),
         None, "generic"]]])
     tz  = GL_TIMEZONE.get(gl, "0")
     cc  = GL_COUNTRY_CODE.get(gl, "SG")
@@ -397,7 +397,7 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
     return session
 
 
-async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg"):
+async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg", guests=2):
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end   = datetime.strptime(end_date, "%Y-%m-%d").date()
     debug = []
@@ -419,7 +419,7 @@ async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg
         status, body = batchexecute(
             session["token"], year, month,
             session["cookies"], session.get("f_sid"), session.get("bl"),
-            currency=currency, gl=gl
+            currency=currency, gl=gl, guests=guests
         )
         prices = parse_prices(body)
         debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices")
@@ -460,6 +460,7 @@ def scrape():
     e        = (data.get("end_date")   or "").strip()
     currency = (data.get("currency")   or "USD").strip().upper()
     gl       = (data.get("gl")         or "us").strip().lower()
+    guests   = int(data.get("guests")  or 2)
     if not hotel or not s or not e:
         return jsonify({"error": "Missing fields"}), 400
     try:
@@ -472,7 +473,7 @@ def scrape():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl))
+            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl, guests=guests))
         finally:
             loop.close()
         return jsonify({"hotel":hotel,"start_date":s,"end_date":e,
@@ -490,4 +491,3 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     app.run(debug=False, host="0.0.0.0", port=port)
-  
