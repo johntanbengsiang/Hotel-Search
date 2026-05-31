@@ -10,14 +10,13 @@ Total time: ~5-10 seconds for a full year (12 API calls)
 import asyncio
 import json
 import re
-import os
 import requests
 import nest_asyncio
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from calendar import monthrange
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 # Required for asyncio compatibility with gunicorn
 nest_asyncio.apply()
@@ -25,13 +24,12 @@ nest_asyncio.apply()
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/")
-def index():
-    return app.send_static_file("index.html")
-
 app.static_folder = "."
 app.static_url_path = ""
 
+@app.route("/")
+def index():
+    return app.send_static_file("index.html")
 
 
 def months_in_range(start: date, end: date):
@@ -48,16 +46,13 @@ def months_in_range(start: date, end: date):
 
 
 def month_window(year: int, month: int):
-    """Return (start_list, end_list) covering the full month for the API call.
-    Google's API wants the last day of previous month as window start."""
-    # Start: last day of previous month
+    """Return (start_list, end_list) covering the full month for the API call."""
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
         prev_year, prev_month = year, month - 1
     prev_last = monthrange(prev_year, prev_month)[1]
     start = [prev_year, prev_month, prev_last]
-    # End: last day of this month
     this_last = monthrange(year, month)[1]
     end = [year, month, this_last]
     return start, end
@@ -75,9 +70,9 @@ def parse_yY52ce_response(text: str) -> dict:
         entries = parsed[1]
         for entry in entries:
             try:
-                price_str = entry[1][0]          # "$897"
-                price = int(price_str.replace('$', '').replace(',', ''))
-                ci = entry[8][0]                  # [2026, 6, 3]
+                price_str = entry[1][0]
+                price = int(price_str.replace('$', '').replace(',', '').replace('SGD\xa0', '').replace('SGD', '').strip())
+                ci = entry[8][0]
                 date_str = f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"
                 results[date_str] = price
             except (IndexError, TypeError, ValueError, KeyError):
@@ -93,24 +88,17 @@ async def get_session_and_token(hotel_name: str) -> dict:
     1. Load the search page and click into the hotel
     2. Extract the hotel token from the entity URL
     3. Capture cookies + f.sid + bl from a batchexecute request
+    Returns dict with token, cookies, sid, bl, headers
     """
     from playwright.async_api import async_playwright
 
-    session_data = {
-        "token": None,
-        "cookies": {},
-        "sid": None,
-        "bl": None,
-        "f_sid": None,
-    }
+    session_data = {"token": None, "cookies": {}, "sid": None, "bl": None, "f_sid": None}
     captured = []
 
     async with async_playwright() as p:
-
-        print("Chromium exists:", os.path.exists("/usr/bin/chromium"))
-
+        # Let Playwright use its own bundled Chromium — do NOT pass executable_path
+        # (Dockerfile runs `playwright install chromium` so the browser is always present)
         browser = await p.chromium.launch(
-            executable_path="/usr/bin/chromium",
             headless=True,
             args=[
                 "--no-sandbox",
@@ -122,98 +110,95 @@ async def get_session_and_token(hotel_name: str) -> dict:
                 "--no-zygote",
             ]
         )
-
         context = await browser.new_context(
             viewport={"width": 1400, "height": 900},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             locale="en-US",
+            # Accept English to avoid consent/language redirect pages
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
         )
-
         page = await context.new_page()
 
-        await page.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
-        )
+        # Hide automation signals
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+            window.chrome = { runtime: {} };
+        """)
 
+        # Capture batchexecute requests to extract f.sid and bl session params
         async def on_request(req):
-            if "batchexecute" in req.url and not captured:
+            if 'batchexecute' in req.url and not captured:
                 url = req.url
-
-                sid_m = re.search(r"f\.sid=(-?\d+)", url)
-                bl_m = re.search(r"bl=([^&]+)", url)
-
+                sid_m = re.search(r'f\.sid=(-?\d+)', url)
+                bl_m  = re.search(r'bl=([^&]+)', url)
                 if sid_m:
                     session_data["f_sid"] = sid_m.group(1)
-
                 if bl_m:
                     session_data["bl"] = bl_m.group(1)
-
                 captured.append(True)
 
         page.on("request", on_request)
 
         encoded = quote(hotel_name)
-
         await page.goto(
             f"https://www.google.com/travel/search?q={encoded}&hl=en&gl=sg&curr=USD",
-            wait_until="commit",
-            timeout=20000,
+            wait_until="domcontentloaded",
+            timeout=45000,
         )
 
-        print("Status:", response.status if response else "No response")
-        print("Final URL:", page.url)
-        
-        await page.screenshot(path="/tmp/google.png")
-        
-        print(await page.title())
-        print((await page.content())[:2000])
+        # Wait for JS to render the page (Google Travel is a heavy SPA)
+        await page.wait_for_timeout(4000)
 
-        await page.wait_for_timeout(3000)
+        # Handle Google consent page if it appears
+        try:
+            consent_btn = page.locator('button:has-text("Accept all"), button:has-text("I agree"), [aria-label*="Accept"]')
+            if await consent_btn.count() > 0:
+                await consent_btn.first.click()
+                await page.wait_for_timeout(2000)
+        except Exception:
+            pass
 
+        # Extract hotel token from entity link href
         links = await page.eval_on_selector_all(
             'a[href*="/travel/hotels/entity/"]',
-            "els => els.map(e => e.href)"
+            'els => els.map(e => e.href)'
         )
 
-        for link in links:
-            token_m = re.search(
-                r"/travel/hotels/entity/([A-Za-z0-9_=-]+)",
-                link
+        # If no links yet, scroll and wait a bit more (lazy loading)
+        if not links:
+            await page.mouse.wheel(0, 400)
+            await page.wait_for_timeout(2000)
+            links = await page.eval_on_selector_all(
+                'a[href*="/travel/hotels/entity/"]',
+                'els => els.map(e => e.href)'
             )
 
+        for link in links:
+            token_m = re.search(r'/travel/hotels/entity/([A-Za-z0-9_=-]+)', link)
             if token_m:
                 session_data["token"] = token_m.group(1)
                 break
 
+        # Click into hotel to trigger batchexecute calls (captures real session cookies)
         if session_data["token"]:
             try:
-                await page.click(
-                    'a[href*="/travel/hotels/entity/"]',
-                    timeout=5000
-                )
-
-                await page.wait_for_timeout(2000)
-
-                await page.get_by_text(
-                    "Prices",
-                    exact=True
-                ).first.click(timeout=4000)
-
-                await page.wait_for_timeout(2000)
-
-                await page.mouse.click(433, 215)
-
+                await page.click('a[href*="/travel/hotels/entity/"]', timeout=5000)
                 await page.wait_for_timeout(2500)
+                # Try clicking Prices tab to trigger calendar/price API calls
+                try:
+                    await page.get_by_text("Prices", exact=True).first.click(timeout=4000)
+                    await page.wait_for_timeout(2000)
+                    await page.mouse.click(433, 215)
+                    await page.wait_for_timeout(2500)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
-            except Exception as e:
-                print("Click sequence failed:", e)
-
+        # Capture final cookies
         cookies = await context.cookies()
-
-        session_data["cookies"] = {
-            c["name"]: c["value"]
-            for c in cookies
-        }
+        session_data["cookies"] = {c["name"]: c["value"] for c in cookies}
 
         await browser.close()
 
@@ -274,7 +259,7 @@ async def scrape_hotel_prices(hotel_name: str, start_date: str, end_date: str):
     session = await get_session_and_token(hotel_name)
 
     if not session["token"]:
-        return [], ["ERROR: Could not find hotel token. Check hotel name."]
+        return [], ["ERROR: Could not find hotel token. Try a more specific hotel name, e.g. 'Marina Bay Sands Singapore'."]
 
     debug.append(f"Hotel token: {session['token']}")
     debug.append(f"Session ID: {session['f_sid']}, Build: {session['bl']}")
@@ -301,7 +286,6 @@ async def scrape_hotel_prices(hotel_name: str, start_date: str, end_date: str):
             "day_of_week": current.strftime("%a"),
             "month": current.strftime("%B %Y"),
         })
-        from datetime import timedelta
         current += timedelta(days=1)
 
     debug.append(f"Done. {len([r for r in results if r['price']])} prices found out of {len(results)} days.")
@@ -353,7 +337,9 @@ def scrape():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results, debug = loop.run_until_complete(scrape_hotel_prices(hotel_name, start_date, end_date))
+            results, debug = loop.run_until_complete(
+                scrape_hotel_prices(hotel_name, start_date, end_date)
+            )
         finally:
             loop.close()
         stats = calculate_stats(results)
