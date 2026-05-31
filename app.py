@@ -1,29 +1,23 @@
 """
-Google Hotels Price Scraper - Flask Backend
-Strategy:
-1. Use Playwright ONCE to load the page, extract hotel token + cookies + session params
-2. Use requests (fast HTTP) to call the yY52ce batchexecute API once per month
-3. Parse the structured JSON response - no HTML parsing needed
-Total time: ~5-10 seconds for a full year (12 API calls)
+Google Hotels Price Scraper
+Architecture:
+  - /api/test-direct  : tests batchexecute API with known token (no browser needed)
+  - /api/test-proxy   : tests if a proxy env var reaches google.com/travel
+  - /api/scrape       : main endpoint
 """
 
-import asyncio
-import json
-import re
-import requests
-import nest_asyncio
+import asyncio, json, re, requests, nest_asyncio
 from datetime import datetime, date, timedelta
 from calendar import monthrange
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from urllib.parse import quote
+import os
 
-# Required for asyncio compatibility with gunicorn
 nest_asyncio.apply()
 
 app = Flask(__name__)
 CORS(app)
-
 app.static_folder = "."
 app.static_url_path = ""
 
@@ -31,202 +25,46 @@ app.static_url_path = ""
 def index():
     return app.send_static_file("index.html")
 
+# ─── helpers ────────────────────────────────────────────────────────────────
 
 def months_in_range(start: date, end: date):
-    """Return list of (year, month) tuples covering start..end."""
-    months = []
-    y, m = start.year, start.month
+    months, y, m = [], start.year, start.month
     while (y, m) <= (end.year, end.month):
         months.append((y, m))
         m += 1
-        if m > 12:
-            m = 1
-            y += 1
+        if m > 12: m, y = 1, y + 1
     return months
 
+def month_window(year, month):
+    pyr, pm = (year-1, 12) if month == 1 else (year, month-1)
+    return [pyr, pm, monthrange(pyr, pm)[1]], [year, month, monthrange(year, month)[1]]
 
-def month_window(year: int, month: int):
-    """Return (start_list, end_list) covering the full month for the API call."""
-    if month == 1:
-        prev_year, prev_month = year - 1, 12
-    else:
-        prev_year, prev_month = year, month - 1
-    prev_last = monthrange(prev_year, prev_month)[1]
-    start = [prev_year, prev_month, prev_last]
-    this_last = monthrange(year, month)[1]
-    end = [year, month, this_last]
-    return start, end
-
-
-def parse_yY52ce_response(text: str) -> dict:
-    """Parse the yY52ce batchexecute response into {date_str: price_int}."""
+def parse_prices(text):
     results = {}
     m = re.search(r'\["wrb\.fr","yY52ce","(.+?)",null,null,null', text, re.DOTALL)
     if not m:
         return results
     try:
-        inner = json.loads('"' + m.group(1) + '"')
-        parsed = json.loads(inner)
-        entries = parsed[1]
-        for entry in entries:
+        parsed = json.loads(json.loads('"' + m.group(1) + '"'))
+        for entry in parsed[1]:
             try:
-                price_str = entry[1][0]
-                price = int(price_str.replace('$', '').replace(',', '').replace('SGD\xa0', '').replace('SGD', '').strip())
+                price = int(re.sub(r'[^\d]', '', entry[1][0]))
                 ci = entry[8][0]
-                date_str = f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"
-                results[date_str] = price
-            except (IndexError, TypeError, ValueError, KeyError):
-                pass
-    except Exception:
-        pass
+                results[f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"] = price
+            except: pass
+    except: pass
     return results
 
-
-async def get_session_and_token(hotel_name: str) -> dict:
-    """
-    Use Playwright once to:
-    1. Load the search page and click into the hotel
-    2. Extract the hotel token from the entity URL
-    3. Capture cookies + f.sid + bl from a batchexecute request
-    Returns dict with token, cookies, sid, bl, headers
-    """
-    from playwright.async_api import async_playwright
-
-    session_data = {"token": None, "cookies": {}, "sid": None, "bl": None, "f_sid": None}
-    captured = []
-
-    async with async_playwright() as p:
-        # Let Playwright use its own bundled Chromium — do NOT pass executable_path
-        # (Dockerfile runs `playwright install chromium` so the browser is always present)
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-setuid-sandbox",
-                "--single-process",
-                "--no-zygote",
-            ]
-        )
-        context = await browser.new_context(
-            viewport={"width": 1400, "height": 900},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            locale="en-US",
-            # Accept English to avoid consent/language redirect pages
-            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-        )
-        page = await context.new_page()
-
-        # Hide automation signals
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-            window.chrome = { runtime: {} };
-        """)
-
-        # Capture batchexecute requests to extract f.sid and bl session params
-        async def on_request(req):
-            if 'batchexecute' in req.url and not captured:
-                url = req.url
-                sid_m = re.search(r'f\.sid=(-?\d+)', url)
-                bl_m  = re.search(r'bl=([^&]+)', url)
-                if sid_m:
-                    session_data["f_sid"] = sid_m.group(1)
-                if bl_m:
-                    session_data["bl"] = bl_m.group(1)
-                captured.append(True)
-
-        page.on("request", on_request)
-
-        encoded = quote(hotel_name)
-        await page.goto(
-            f"https://www.google.com/travel/search?q={encoded}&hl=en&gl=sg&curr=USD",
-            wait_until="domcontentloaded",
-            timeout=45000,
-        )
-
-        # Wait for JS to render the page (Google Travel is a heavy SPA)
-        await page.wait_for_timeout(4000)
-
-        # Handle Google consent page if it appears
-        try:
-            consent_btn = page.locator('button:has-text("Accept all"), button:has-text("I agree"), [aria-label*="Accept"]')
-            if await consent_btn.count() > 0:
-                await consent_btn.first.click()
-                await page.wait_for_timeout(2000)
-        except Exception:
-            pass
-
-        # Extract hotel token from entity link href
-        links = await page.eval_on_selector_all(
-            'a[href*="/travel/hotels/entity/"]',
-            'els => els.map(e => e.href)'
-        )
-
-        # If no links yet, scroll and wait a bit more (lazy loading)
-        if not links:
-            await page.mouse.wheel(0, 400)
-            await page.wait_for_timeout(2000)
-            links = await page.eval_on_selector_all(
-                'a[href*="/travel/hotels/entity/"]',
-                'els => els.map(e => e.href)'
-            )
-
-        for link in links:
-            token_m = re.search(r'/travel/hotels/entity/([A-Za-z0-9_=-]+)', link)
-            if token_m:
-                session_data["token"] = token_m.group(1)
-                break
-
-        # Click into hotel to trigger batchexecute calls (captures real session cookies)
-        if session_data["token"]:
-            try:
-                await page.click('a[href*="/travel/hotels/entity/"]', timeout=5000)
-                await page.wait_for_timeout(2500)
-                # Try clicking Prices tab to trigger calendar/price API calls
-                try:
-                    await page.get_by_text("Prices", exact=True).first.click(timeout=4000)
-                    await page.wait_for_timeout(2000)
-                    await page.mouse.click(433, 215)
-                    await page.wait_for_timeout(2500)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-        # Capture final cookies
-        cookies = await context.cookies()
-        session_data["cookies"] = {c["name"]: c["value"] for c in cookies}
-
-        await browser.close()
-
-    return session_data
-
-
-def fetch_month_prices(session: dict, year: int, month: int) -> dict:
-    """Call the yY52ce API for one month. Returns {date_str: price}."""
+def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None):
     start, end = month_window(year, month)
-
-    inner_payload = json.dumps([None, [start, end, 1], None, session["token"], "SGD"])
-    freq = json.dumps([[["yY52ce", inner_payload, None, "generic"]]])
-
-    params = {
-        "rpcids": "yY52ce",
-        "source-path": "/travel/search",
-        "hl": "en",
-        "gl": "sg",
-        "soc-app": "162",
-        "soc-platform": "1",
-        "soc-device": "1",
-        "rt": "c",
-    }
-    if session.get("f_sid"):
-        params["f.sid"] = session["f_sid"]
-    if session.get("bl"):
-        params["bl"] = session["bl"]
-
+    freq = json.dumps([[["yY52ce",
+        json.dumps([None, [start, end, 1], None, token, "SGD"]),
+        None, "generic"]]])
+    params = {"rpcids":"yY52ce","source-path":"/travel/search",
+              "hl":"en","gl":"sg","soc-app":"162",
+              "soc-platform":"1","soc-device":"1","rt":"c"}
+    if f_sid: params["f.sid"] = f_sid
+    if bl:    params["bl"]    = bl
     headers = {
         "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -235,100 +73,374 @@ def fetch_month_prices(session: dict, year: int, month: int) -> dict:
         "x-goog-ext-259736195-jspb": '["en-US","SG","USD",1,null,[-480],null,null,7,[]]',
         "x-goog-ext-190139975-jspb": '["SG","ZZ","ZwswOw=="]',
     }
-
-    resp = requests.post(
+    r = requests.post(
         "https://www.google.com/_/TravelFrontendUi/data/batchexecute",
-        params=params,
+        params=params, data={"f.req": freq},
+        headers=headers, cookies=cookies or {}, timeout=20)
+    return r.status_code, r.text
+
+# ─── diagnostic endpoints ────────────────────────────────────────────────────
+
+@app.route("/api/test-direct")
+def test_direct():
+    """
+    Tests whether batchexecute works WITHOUT any browser session.
+    Uses Marina Bay Sands (well-known stable token).
+    Run this first to see if we even need Playwright.
+    """
+    TOKEN = "ChcIq5qZt_n_____ARoJL20vMDc3Nm14EAE"
+    results = {}
+
+    # Test 1: completely bare (no cookies, no session params)
+    status1, body1 = batchexecute(TOKEN, 2026, 8)
+    prices1 = parse_prices(body1)
+    results["test1_no_session"] = {
+        "status": status1,
+        "body_len": len(body1),
+        "has_data": bool(prices1),
+        "prices_found": len(prices1),
+        "sample": dict(list(prices1.items())[:3]),
+        "first_200": body1[:200],
+    }
+
+    # Test 2: With full goog extension headers
+    start, end = month_window(2026, 8)
+    freq = json.dumps([[["yY52ce",
+        json.dumps([None, [start, end, 1], None, TOKEN, "SGD"]),
+        None, "generic"]]])
+    r2 = requests.post(
+        "https://www.google.com/_/TravelFrontendUi/data/batchexecute",
+        params={"rpcids":"yY52ce","source-path":"/travel/search","hl":"en",
+                "gl":"sg","soc-app":"162","soc-platform":"1","soc-device":"1","rt":"c"},
         data={"f.req": freq},
-        headers=headers,
-        cookies=session["cookies"],
-        timeout=15,
+        headers={
+            "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8",
+            "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer":"https://www.google.com/travel/search",
+            "x-same-domain":"1",
+            "x-goog-ext-259736195-jspb":'["en-US","SG","USD",1,null,[-480],null,null,7,[]]',
+            "x-goog-ext-190139975-jspb":'["SG","ZZ","ZwswOw=="]',
+            "Accept":"*/*", "Accept-Language":"en-US,en;q=0.9",
+            "Origin":"https://www.google.com",
+        },
+        timeout=20
     )
-    if resp.status_code != 200:
-        return {}
-    return parse_yY52ce_response(resp.text)
+    prices2 = parse_prices(r2.text)
+    results["test2_full_headers"] = {
+        "status": r2.status_code,
+        "body_len": len(r2.text),
+        "has_data": bool(prices2),
+        "prices_found": len(prices2),
+        "sample": dict(list(prices2.items())[:3]),
+        "first_200": r2.text[:200],
+    }
+
+    # Report server IP for debugging
+    try:
+        ip = requests.get("https://api.ipify.org?format=json", timeout=5).json()["ip"]
+    except:
+        ip = "unknown"
+
+    results["server_ip"] = ip
+    results["conclusion"] = (
+        "batchexecute works without browser!" 
+        if (prices1 or prices2) 
+        else "batchexecute requires browser session or different IP"
+    )
+    return jsonify(results)
 
 
-async def scrape_hotel_prices(hotel_name: str, start_date: str, end_date: str):
+@app.route("/api/test-proxy")
+def test_proxy():
+    """
+    Tests if PROXY_URL env var routes around Google's datacenter IP block.
+    Set PROXY_URL=http://user:pass@host:port in Render env vars.
+    """
+    proxy_url = os.environ.get("PROXY_URL")
+    if not proxy_url:
+        return jsonify({
+            "error": "PROXY_URL env var not set",
+            "how_to": "Add PROXY_URL=http://user:pass@host:port in Render environment variables",
+            "free_options": [
+                "webshare.io - 10 free residential proxies",
+                "proxyscrape.com - free shared proxies (less reliable)",
+            ]
+        })
+
+    proxies = {"http": proxy_url, "https": proxy_url}
+    results = {}
+
+    # Test 1: Can we reach google.com/travel through proxy?
+    try:
+        r = requests.get(
+            "https://www.google.com/travel/search?q=Marina+Bay+Sands+Singapore&hl=en&gl=sg",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                     "Accept-Language": "en-US,en;q=0.9"},
+            proxies=proxies, timeout=20
+        )
+        tokens = re.findall(r"/travel/hotels/entity/([A-Za-z0-9_=-]{20,})", r.text)
+        results["proxy_travel_page"] = {
+            "status": r.status_code,
+            "body_len": len(r.text),
+            "tokens_found": tokens[:3],
+            "has_entity_links": bool(tokens),
+            "note": "If status=200 and tokens found, proxy works for token extraction",
+        }
+    except Exception as e:
+        results["proxy_travel_page"] = {"error": str(e)}
+
+    # Test 2: Proxy IP
+    try:
+        ip_r = requests.get("https://api.ipify.org?format=json", proxies=proxies, timeout=10)
+        results["proxy_ip"] = ip_r.json().get("ip")
+    except Exception as e:
+        results["proxy_ip"] = f"error: {e}"
+
+    return jsonify(results)
+
+
+@app.route("/api/test-playwright")
+def test_playwright():
+    """
+    Tests Playwright with optional PROXY_URL.
+    Measures timing and whether token is found.
+    """
+    proxy_url = os.environ.get("PROXY_URL")
+
+    async def run():
+        from playwright.async_api import async_playwright
+        import time
+
+        log = []
+        result = {"token": None, "f_sid": None, "cookies": 0, "timing": {}}
+
+        async with async_playwright() as p:
+            t0 = time.time()
+            launch_kwargs = dict(
+                headless=True,
+                args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu",
+                      "--single-process","--no-zygote",
+                      "--disable-blink-features=AutomationControlled",
+                      "--disable-background-networking","--no-first-run"],
+            )
+            if proxy_url:
+                launch_kwargs["proxy"] = {"server": proxy_url}
+                log.append(f"Using proxy: {proxy_url[:30]}...")
+            else:
+                log.append("No proxy - direct connection")
+
+            browser = await p.chromium.launch(**launch_kwargs)
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+            )
+            await context.route("**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,mp4}", 
+                              lambda r: r.abort())
+
+            page = await context.new_page()
+            await page.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
+
+            def on_request(req):
+                if "batchexecute" in req.url:
+                    sid_m = re.search(r"f\.sid=(-?\d+)", req.url)
+                    bl_m  = re.search(r"bl=([^&]+)", req.url)
+                    if sid_m: result["f_sid"] = sid_m.group(1)
+                    if bl_m:  result["bl"]    = bl_m.group(1)
+
+            page.on("request", on_request)
+            result["timing"]["browser_launch"] = round(time.time() - t0, 2)
+
+            try:
+                await page.goto(
+                    "https://www.google.com/travel/search?q=Marina+Bay+Sands+Singapore&hl=en&gl=sg",
+                    wait_until="commit", timeout=30000
+                )
+                result["timing"]["commit"] = round(time.time() - t0, 2)
+                log.append(f"commit at {result['timing']['commit']}s")
+
+                for i in range(20):
+                    await asyncio.sleep(1)
+                    html = await page.content()
+                    tokens = re.findall(r"/travel/hotels/entity/([A-Za-z0-9_=-]{20,})", html)
+                    log.append(f"t={i+1}s html_len={len(html)} tokens={len(tokens)}")
+                    if tokens:
+                        result["token"] = tokens[0]
+                        result["timing"]["token_found"] = round(time.time() - t0, 2)
+                        break
+                    if i == 0 and len(html) < 500:
+                        log.append(f"Suspicious short page: {html[:200]}")
+            except Exception as e:
+                log.append(f"Error: {e}")
+                result["timing"]["error"] = round(time.time() - t0, 2)
+
+            cookies = await context.cookies()
+            result["cookies"] = len(cookies)
+            result["timing"]["total"] = round(time.time() - t0, 2)
+            await browser.close()
+
+        return result, log
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result, log = loop.run_until_complete(run())
+    finally:
+        loop.close()
+
+    return jsonify({"result": result, "log": log})
+
+
+# ─── main scrape ─────────────────────────────────────────────────────────────
+
+async def get_session(hotel_name, debug):
+    from playwright.async_api import async_playwright
+    import time
+
+    proxy_url = os.environ.get("PROXY_URL")
+    session = {"token": None, "cookies": {}, "f_sid": None, "bl": None}
+
+    async with async_playwright() as p:
+        launch_kwargs = dict(
+            headless=True,
+            args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu",
+                  "--single-process","--no-zygote",
+                  "--disable-blink-features=AutomationControlled",
+                  "--disable-background-networking","--no-first-run","--mute-audio"],
+        )
+        if proxy_url:
+            launch_kwargs["proxy"] = {"server": proxy_url}
+            debug.append(f"Using proxy: {proxy_url[:25]}...")
+
+        browser = await p.chromium.launch(**launch_kwargs)
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+        )
+        await context.route("**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,mp4}",
+                           lambda r: r.abort())
+        page = await context.new_page()
+        await page.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+            "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3]});"
+            "window.chrome={runtime:{}};"
+        )
+        page.on("request", lambda req: (
+            session.update({"f_sid": re.search(r"f\.sid=(-?\d+)", req.url).group(1)})
+            if "batchexecute" in req.url and re.search(r"f\.sid=(-?\d+)", req.url) else None
+        ))
+
+        t0 = time.time()
+        try:
+            await page.goto(
+                f"https://www.google.com/travel/search?q={quote(hotel_name)}&hl=en&gl=sg&curr=USD",
+                wait_until="commit", timeout=60000
+            )
+            debug.append(f"Page committed at {time.time()-t0:.1f}s")
+        except Exception as e:
+            debug.append(f"goto error: {e}")
+            await browser.close()
+            return session
+
+        for i in range(30):
+            await asyncio.sleep(1)
+            try:
+                html = await page.content()
+                if len(html) < 500 and i < 5:
+                    debug.append(f"t={i+1}s: short page ({len(html)} chars) - may be blocked")
+                tokens = re.findall(r"/travel/hotels/entity/([A-Za-z0-9_=-]{20,})", html)
+                if tokens:
+                    session["token"] = tokens[0]
+                    debug.append(f"Token found at t={i+1}s")
+                    break
+            except: pass
+            if i == 5:
+                try:
+                    btn = page.locator('button:has-text("Accept all"), button:has-text("I agree")')
+                    if await btn.count() > 0:
+                        await btn.first.click()
+                        debug.append("Dismissed consent popup")
+                except: pass
+
+        if session["token"]:
+            try:
+                await page.locator('a[href*="/travel/hotels/entity/"]').first.click(timeout=8000)
+                await page.wait_for_timeout(3000)
+            except: pass
+
+        cookies = await context.cookies()
+        session["cookies"] = {c["name"]: c["value"] for c in cookies}
+        debug.append(f"Session: token={'✓' if session['token'] else '✗'} cookies={len(session['cookies'])}")
+        await browser.close()
+
+    return session
+
+
+async def scrape_prices(hotel_name, start_date, end_date):
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
-    end   = datetime.strptime(end_date,   "%Y-%m-%d").date()
+    end   = datetime.strptime(end_date, "%Y-%m-%d").date()
     debug = []
 
-    # Step 1: Browser session (one-time, ~15-20s)
-    debug.append("Launching browser to get session token...")
-    session = await get_session_and_token(hotel_name)
+    debug.append("Step 1: Getting browser session...")
+    session = await get_session(hotel_name, debug)
 
     if not session["token"]:
-        return [], ["ERROR: Could not find hotel token. Try a more specific hotel name, e.g. 'Marina Bay Sands Singapore'."]
+        return [], debug + [
+            "ERROR: No hotel token found.",
+            "→ Run /api/test-direct to check if batchexecute works without browser",
+            "→ Run /api/test-proxy to check if PROXY_URL env var is working",
+            "→ Run /api/test-playwright to diagnose Playwright timing",
+        ]
 
-    debug.append(f"Hotel token: {session['token']}")
-    debug.append(f"Session ID: {session['f_sid']}, Build: {session['bl']}")
-    debug.append(f"Cookies: {len(session['cookies'])} captured")
-
-    # Step 2: API calls — one per month (fast, ~1s each)
+    debug.append(f"Step 2: Fetching prices for {len(months_in_range(start,end))} month(s)...")
     all_prices = {}
-    months = months_in_range(start, end)
-    debug.append(f"Fetching {len(months)} months via API...")
-
-    for year, month in months:
-        prices = fetch_month_prices(session, year, month)
-        debug.append(f"  {year}-{month:02d}: {len(prices)} prices fetched")
+    for year, month in months_in_range(start, end):
+        status, body = batchexecute(
+            session["token"], year, month,
+            session["cookies"], session.get("f_sid"), session.get("bl")
+        )
+        prices = parse_prices(body)
+        debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices")
         all_prices.update(prices)
 
-    # Step 3: Build results for requested date range
-    results = []
-    current = start
+    results, current = [], start
     while current <= end:
         ds = current.strftime("%Y-%m-%d")
-        results.append({
-            "date": ds,
-            "price": all_prices.get(ds),
-            "day_of_week": current.strftime("%a"),
-            "month": current.strftime("%B %Y"),
-        })
+        results.append({"date": ds, "price": all_prices.get(ds),
+                        "day_of_week": current.strftime("%a"),
+                        "month": current.strftime("%B %Y")})
         current += timedelta(days=1)
 
-    debug.append(f"Done. {len([r for r in results if r['price']])} prices found out of {len(results)} days.")
+    found = sum(1 for r in results if r["price"])
+    debug.append(f"Done: {found}/{len(results)} dates have prices")
     return results, debug
 
 
-def calculate_stats(results):
-    monthly = {}
-    all_prices = []
+def calc_stats(results):
+    monthly, all_p = {}, []
     for r in results:
-        if r["price"] is None:
-            continue
-        m = r["month"]
-        monthly.setdefault(m, []).append(r["price"])
-        all_prices.append(r["price"])
-
+        if r["price"] is None: continue
+        monthly.setdefault(r["month"], []).append(r["price"])
+        all_p.append(r["price"])
     return {
-        "monthly": {
-            m: {
-                "average": round(sum(p) / len(p), 2),
-                "min": min(p), "max": max(p), "count": len(p),
-            }
-            for m, p in monthly.items()
-        },
-        "overall_average": round(sum(all_prices) / len(all_prices), 2) if all_prices else None,
-        "total_nights": len(all_prices),
+        "monthly": {m: {"average": round(sum(p)/len(p),2),"min":min(p),"max":max(p),"count":len(p)}
+                    for m, p in monthly.items()},
+        "overall_average": round(sum(all_p)/len(all_p),2) if all_p else None,
+        "total_nights": len(all_p),
     }
 
 
 @app.route("/api/scrape", methods=["POST"])
 def scrape():
     data = request.get_json()
-    hotel_name = (data.get("hotel_name") or "").strip()
-    start_date = (data.get("start_date") or "").strip()
-    end_date   = (data.get("end_date")   or "").strip()
-
-    if not hotel_name or not start_date or not end_date:
-        return jsonify({"error": "Missing required fields"}), 400
-
+    hotel = (data.get("hotel_name") or "").strip()
+    s     = (data.get("start_date") or "").strip()
+    e     = (data.get("end_date")   or "").strip()
+    if not hotel or not s or not e:
+        return jsonify({"error": "Missing fields"}), 400
     try:
-        s = datetime.strptime(start_date, "%Y-%m-%d")
-        e = datetime.strptime(end_date,   "%Y-%m-%d")
-        if e <= s:
+        if datetime.strptime(e,"%Y-%m-%d") <= datetime.strptime(s,"%Y-%m-%d"):
             return jsonify({"error": "End date must be after start date"}), 400
     except ValueError:
         return jsonify({"error": "Invalid date format"}), 400
@@ -337,31 +449,22 @@ def scrape():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results, debug = loop.run_until_complete(
-                scrape_hotel_prices(hotel_name, start_date, end_date)
-            )
+            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e))
         finally:
             loop.close()
-        stats = calculate_stats(results)
-        return jsonify({
-            "hotel": hotel_name,
-            "start_date": start_date,
-            "end_date": end_date,
-            "results": results,
-            "stats": stats,
-            "debug": debug,
-        })
-    except Exception as e:
+        return jsonify({"hotel":hotel,"start_date":s,"end_date":e,
+                        "results":results,"stats":calc_stats(results),"debug":debug})
+    except Exception as ex:
         import traceback
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+        return jsonify({"error": str(ex), "trace": traceback.format_exc()}), 500
 
 
-@app.route("/health", methods=["GET"])
+@app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status":"ok","proxy_configured": bool(os.environ.get("PROXY_URL"))})
 
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5050))
     app.run(debug=False, host="0.0.0.0", port=port)
+    
