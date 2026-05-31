@@ -23,3 +23,11 @@ ENV PORT=10000
 EXPOSE 10000
 
 CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 1 app:app
+
+RUN echo "=== DEBUG BUILD ==="
+RUN pwd
+RUN ls -la
+RUN which chromium || true
+RUN which chromium-browser || true
+RUN chromium --version || true
+RUN chromium-browser --version || true
