@@ -156,9 +156,17 @@ async def get_session_and_token(hotel_name: str) -> dict:
 
         await page.goto(
             f"https://www.google.com/travel/search?q={encoded}&hl=en&gl=sg&curr=USD",
-            wait_until="domcontentloaded",
-            timeout=45000,
+            wait_until="commit",
+            timeout=20000,
         )
+
+        print("Status:", response.status if response else "No response")
+        print("Final URL:", page.url)
+        
+        await page.screenshot(path="/tmp/google.png")
+        
+        print(await page.title())
+        print((await page.content())[:2000])
 
         await page.wait_for_timeout(3000)
 
