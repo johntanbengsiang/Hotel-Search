@@ -528,7 +528,14 @@
     <div class="input-grid">
       <div class="field">
         <label>Hotel Name</label>
-        <input type="text" id="hotel" placeholder="e.g. Marina Bay Sands Singapore" value="Marina Bay Sands Singapore" oninput="onHotelInput()" />
+        <input type="text" id="hotel" placeholder="Hotel name OR paste Google Hotels URL" value="Marina Bay Sands Singapore" oninput="onHotelInput()" />
+      </div>
+      <div class="field" style="grid-column: 1 / -1; margin-top: -8px;">
+        <div style="font-size:0.72rem;color:var(--muted);font-family:var(--font-mono);">
+          💡 For exact prices: paste the Google Hotels URL 
+          (e.g. google.com/travel/hotels/.../entity/<b>CgoI...</b>/prices)
+          instead of just the hotel name
+        </div>
       </div>
       <div class="field">
         <label>Start Date</label>

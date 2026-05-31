@@ -313,12 +313,33 @@ def test_playwright():
 
 # ─── main scrape ─────────────────────────────────────────────────────────────
 
+def extract_token_from_input(hotel_input):
+    """If user pastes a Google Hotels URL or entity token directly, extract it."""
+    import re
+    # Match /entity/TOKEN or entity/TOKEN
+    m = re.search(r'/entity/([A-Za-z0-9_=-]{15,})', hotel_input)
+    if m:
+        return m.group(1)
+    # Match raw token format (starts with Ch or Cg, base64-like)
+    m = re.match(r'^(Ch[A-Za-z0-9_=-]{15,})$', hotel_input.strip())
+    if m:
+        return m.group(1)
+    return None
+
 async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
     from playwright.async_api import async_playwright
     import time
 
     proxy_url = os.environ.get("PROXY_URL")
     session = {"token": None, "cookies": {}, "f_sid": None, "bl": None}
+
+    # Check if user pasted a Google Hotels URL or token directly
+    direct_token = extract_token_from_input(hotel_name)
+    if direct_token:
+        debug.append(f"Using token from URL/input: {direct_token[:20]}...")
+        session["token"] = direct_token
+        # Still need cookies + f_sid for the API call, so continue with browser
+        # but skip the token search loop
 
     async with async_playwright() as p:
         launch_kwargs = dict(
@@ -364,6 +385,10 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
             return session
 
         for i in range(30):
+            if session["token"]:  # Already have token (from URL input or earlier)
+                await asyncio.sleep(2)  # Still wait briefly for cookies/f_sid
+                debug.append("Token already set, collecting cookies only")
+                break
             await asyncio.sleep(1)
             try:
                 html = await page.content()
