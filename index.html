@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hotel Rate Scout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0e0f11;
+      --surface: #16181c;
+      --surface2: #1e2026;
+      --border: #2a2d35;
+      --accent: #c8f064;
+      --accent2: #64d4f0;
+      --text: #e8eaf0;
+      --muted: #6b7280;
+      --danger: #f87171;
+      --success: #4ade80;
+      --font-serif: 'DM Serif Display', serif;
+      --font-sans: 'DM Sans', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Background texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: 
+        radial-gradient(ellipse 60% 40% at 80% 10%, rgba(200,240,100,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 10% 80%, rgba(100,212,240,0.05) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      padding: 48px 0 40px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: flex-end;
+      gap: 20px;
+    }
+
+    .logo-mark {
+      width: 44px;
+      height: 44px;
+      background: var(--accent);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+      margin-bottom: 4px;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    h1 span {
+      color: var(--accent);
+      font-style: italic;
+    }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 300;
+      margin-top: 8px;
+      letter-spacing: 0.02em;
+    }
+
+    /* Input Panel */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      margin: 36px 0;
+    }
+
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    .input-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr auto auto;
+      gap: 16px;
+      align-items: end;
+    }
+
+    @media (max-width: 720px) {
+      .input-grid { grid-template-columns: 1fr; }
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    input[type="date"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      padding: 12px 16px;
+      border-radius: 10px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(200,240,100,0.1);
+    }
+
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(0.6);
+      cursor: pointer;
+    }
+
+    .btn-run {
+      background: var(--accent);
+      color: #0e0f11;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      font-size: 0.95rem;
+      padding: 12px 28px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+    }
+
+    .btn-run:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 24px rgba(200,240,100,0.3);
+    }
+
+    .btn-run:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Status bar */
+    .status-bar {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 24px;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    .status-bar.visible { display: flex; }
+    .status-bar.error { border-color: var(--danger); color: var(--danger); }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Stats summary row */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    @media (max-width: 600px) {
+      .stats-row { grid-template-columns: 1fr; }
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+    }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-family: var(--font-serif);
+      font-size: 2rem;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    .stat-value.blue { color: var(--accent2); }
+    .stat-value.white { color: var(--text); }
+
+    .stat-sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Monthly table */
+    .section-title {
+      font-family: var(--font-serif);
+      font-size: 1.4rem;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+
+    .section-title span {
+      color: var(--accent);
+      font-style: italic;
+    }
+
+    .monthly-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+
+    .month-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      transition: border-color 0.2s;
+    }
+
+    .month-card:hover { border-color: var(--accent); }
+
+    .month-name {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .month-avg {
+      font-family: var(--font-serif);
+      font-size: 1.8rem;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .month-range {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* Full data table */
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 48px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    thead tr {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      padding: 14px 20px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(42,45,53,0.6);
+      transition: background 0.12s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface); }
+
+    td {
+      padding: 12px 20px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+    }
+
+    td.price { color: var(--accent); font-weight: 500; }
+    td.price-null { color: var(--muted); }
+    td.weekend { color: var(--accent2); }
+
+    /* Price heat bar */
+    .price-bar {
+      display: inline-block;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--accent);
+      opacity: 0.6;
+      vertical-align: middle;
+      margin-left: 8px;
+    }
+
+    /* Month separator in table */
+    tr.month-sep td {
+      background: var(--surface2);
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 8px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Export button */
+    .btn-export {
+      background: transparent;
+      color: var(--accent2);
+      border: 1px solid var(--accent2);
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      padding: 8px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-bottom: 20px;
+    }
+
+    .btn-export:hover { background: rgba(100,212,240,0.08); }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    /* Note banner */
+    .note {
+      background: rgba(200,240,100,0.06);
+      border: 1px solid rgba(200,240,100,0.2);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    .note strong { color: var(--accent); }
+
+    #results { display: none; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <div class="header-inner">
+      <div class="logo-mark">🏨</div>
+      <div>
+        <h1>Hotel Rate <span>Scout</span></h1>
+        <p class="tagline">Pull nightly rates from Google Hotels across any date range</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Input Panel -->
+  <div class="panel" style="margin-top: 36px;">
+    <div class="panel-title">// Search parameters</div>
+    <div class="input-grid">
+      <div class="field">
+        <label>Hotel Name</label>
+        <input type="text" id="hotel" placeholder="e.g. Marina Bay Sands Singapore" value="Marina Bay Sands Singapore" />
+      </div>
+      <div class="field">
+        <label>Start Date</label>
+        <input type="date" id="startDate" />
+      </div>
+      <div class="field">
+        <label>End Date</label>
+        <input type="date" id="endDate" oninput="updateDayCount()" />
+      </div>
+      <div class="field" style="min-width:120px;">
+        <label>Days</label>
+        <div id="dayCount" style="font-family:var(--font-mono);font-size:0.9rem;padding:12px 0;color:var(--accent);">—</div>
+      </div>
+      <button class="btn-run" id="runBtn" onclick="runScrape()">
+        Run Scout →
+      </button>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="status-bar" id="statusBar">
+    <div class="spinner" id="spinner"></div>
+    <span id="statusText">Connecting to Google Hotels…</span>
+  </div>
+
+  <!-- Note -->
+  <div class="note" id="noteBox" style="display:none;">
+    <strong>How it works:</strong> The browser launches once (~15s) to authenticate and find the hotel, 
+    then fetches prices via Google's internal API — <strong>one call per month, ~1 second each</strong>. 
+    A full year takes about 25 seconds total. Prices are in <strong>USD</strong>. 
+    Check the debug log if prices are missing.
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="results-header">
+      <h2 class="section-title">Monthly <span>Averages</span></h2>
+      <button class="btn-export" onclick="exportCSV()">⬇ Export CSV</button>
+    </div>
+
+    <div class="monthly-grid" id="monthlyGrid"></div>
+
+    <h2 class="section-title" style="margin-bottom:16px;">Full <span>Night-by-Night</span> Rates</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Day</th>
+            <th>Rate (USD/night)</th>
+            <th>vs Monthly Avg</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- Debug log -->
+  <div id="debugPanel" style="display:none; margin-bottom:48px;">
+    <h2 class="section-title" style="margin-bottom:12px;">Scraper <span>Debug Log</span></h2>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;">
+      <pre id="debugLog" style="font-family:var(--font-mono);font-size:0.75rem;color:var(--muted);white-space:pre-wrap;line-height:1.7;"></pre>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Set default dates: today → +3 months
+  const today = new Date();
+  const plusThree = new Date(today);
+  plusThree.setMonth(plusThree.getMonth() + 3);
+  document.getElementById('startDate').value = today.toISOString().split('T')[0];
+  document.getElementById('startDate').addEventListener('input', updateDayCount);
+  document.getElementById('endDate').value = plusThree.toISOString().split('T')[0];
+  updateDayCount();
+
+  let globalData = null;
+
+  function setStatus(msg, isError = false) {
+    const bar = document.getElementById('statusBar');
+    bar.className = 'status-bar visible' + (isError ? ' error' : '');
+    document.getElementById('statusText').textContent = msg;
+    document.getElementById('spinner').style.display = isError ? 'none' : 'block';
+  }
+
+  function hideStatus() {
+    document.getElementById('statusBar').className = 'status-bar';
+  }
+
+  function updateDayCount() {
+    const s = document.getElementById('startDate').value;
+    const e = document.getElementById('endDate').value;
+    const el = document.getElementById('dayCount');
+    if (s && e) {
+      const days = Math.round((new Date(e) - new Date(s)) / 86400000);
+      if (days <= 0) { el.textContent = '—'; el.style.color = 'var(--danger)'; }
+      else if (days > 90) { el.textContent = days + ' ⚠'; el.style.color = 'var(--danger)'; }
+      else { el.textContent = days + ' days'; el.style.color = 'var(--accent)'; }
+    } else { el.textContent = '—'; }
+  }
+
+  async function runScrape() {
+    const hotel = document.getElementById('hotel').value.trim();
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
+    if (!hotel || !startDate || !endDate) {
+      setStatus('Please fill in all fields.', true);
+      return;
+    }
+
+    document.getElementById('runBtn').disabled = true;
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('noteBox').style.display = 'none';
+    setStatus('Launching browser for authentication (~15s one-time)…');
+
+    try {
+      setStatus('Fetching prices for "' + hotel + '" via API — ~1s per month…');
+
+      const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5050' : '';
+      const resp = await fetch(apiBase + '/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hotel_name: hotel, start_date: startDate, end_date: endDate }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok || data.error) {
+        setStatus('⚠ ' + (data.error || 'Unknown error'), true);
+        document.getElementById('runBtn').disabled = false;
+        return;
+      }
+
+      globalData = data;
+      hideStatus();
+      renderResults(data);
+      document.getElementById('noteBox').style.display = 'block';
+
+    } catch (err) {
+      setStatus('Could not reach the backend server. Make sure app.py is running on port 5050.', true);
+    }
+
+    document.getElementById('runBtn').disabled = false;
+  }
+
+  function renderResults(data) {
+    const { results, stats, hotel } = data;
+    const priceResults = results.filter(r => r.price !== null);
+
+    // Stats row
+    document.getElementById('statsRow').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Overall Avg / Night</div>
+        <div class="stat-value">${stats.overall_average ? '$' + stats.overall_average : '—'}</div>
+        <div class="stat-sub">across ${stats.total_nights} nights with data</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cheapest Night</div>
+        <div class="stat-value blue">${priceResults.length ? '$' + Math.min(...priceResults.map(r => r.price)) : '—'}</div>
+        <div class="stat-sub">${priceResults.length ? priceResults.find(r => r.price === Math.min(...priceResults.map(x=>x.price))).date : ''}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Most Expensive</div>
+        <div class="stat-value white">${priceResults.length ? '$' + Math.max(...priceResults.map(r => r.price)) : '—'}</div>
+        <div class="stat-sub">${priceResults.length ? priceResults.find(r => r.price === Math.max(...priceResults.map(x=>x.price))).date : ''}</div>
+      </div>
+    `;
+
+    // Monthly cards
+    const monthlyHtml = Object.entries(stats.monthly).map(([month, m]) => `
+      <div class="month-card">
+        <div class="month-name">${month}</div>
+        <div class="month-avg">$${m.average}</div>
+        <div class="month-range">$${m.min} – $${m.max} · ${m.count} nights</div>
+      </div>
+    `).join('');
+    document.getElementById('monthlyGrid').innerHTML = monthlyHtml || '<p style="color:var(--muted);font-size:0.85rem;">No price data returned.</p>';
+
+    // Table
+    const maxPrice = priceResults.length ? Math.max(...priceResults.map(r => r.price)) : 1;
+    let lastMonth = null;
+    const rows = results.map(r => {
+      let monthSep = '';
+      if (r.month !== lastMonth) {
+        lastMonth = r.month;
+        const monthAvg = stats.monthly[r.month] ? stats.monthly[r.month].average : null;
+        monthSep = `<tr class="month-sep"><td colspan="4">${r.month}${monthAvg ? ' · avg $' + monthAvg : ''}</td></tr>`;
+      }
+      const isWeekend = r.day_of_week === 'Sat' || r.day_of_week === 'Sun';
+      const monthAvg = stats.monthly[r.month] ? stats.monthly[r.month].average : null;
+      let vsAvg = '—';
+      if (r.price && monthAvg) {
+        const diff = r.price - monthAvg;
+        vsAvg = (diff >= 0 ? '+' : '') + '$' + Math.abs(diff).toFixed(0);
+      }
+      const barWidth = r.price ? Math.round((r.price / maxPrice) * 80) : 0;
+
+      const priceCell = r.price
+        ? `<td class="price">$${r.price}<span class="price-bar" style="width:${barWidth}px"></span></td>`
+        : `<td class="price-null">—</td>`;
+
+      return `${monthSep}<tr>
+        <td>${r.date}</td>
+        <td class="${isWeekend ? 'weekend' : ''}">${r.day_of_week}</td>
+        ${priceCell}
+        <td style="color:var(--muted);font-size:0.78rem;">${vsAvg}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('tableBody').innerHTML = rows;
+    document.getElementById('results').style.display = 'block';
+
+    // Show debug log
+    if (data.debug && data.debug.length) {
+      document.getElementById('debugPanel').style.display = 'block';
+      document.getElementById('debugLog').textContent = data.debug.join('\n');
+    }
+  }
+
+  function exportCSV() {
+    if (!globalData) return;
+    const { results, stats, hotel } = globalData;
+
+    let csv = 'Hotel,Date,Day,Price (USD),Month,Monthly Avg\n';
+    results.forEach(r => {
+      const monthAvg = stats.monthly[r.month] ? stats.monthly[r.month].average : '';
+      csv += `"${hotel}",${r.date},${r.day_of_week},${r.price ?? ''},${r.month},${monthAvg}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hotel-rates-${hotel.replace(/\s+/g, '-').toLowerCase()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Allow Enter key in hotel input
+  document.getElementById('hotel').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runScrape();
+  });
+</script>
+</body>
+</html>
