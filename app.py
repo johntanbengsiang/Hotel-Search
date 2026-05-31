@@ -369,10 +369,31 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
                 html = await page.content()
                 if len(html) < 500 and i < 5:
                     debug.append(f"t={i+1}s: short page ({len(html)} chars) - may be blocked")
-                tokens = re.findall(r"/travel/hotels/entity/([A-Za-z0-9_=-]{20,})", html)
-                if tokens:
-                    session["token"] = tokens[0]
-                    debug.append(f"Token found at t={i+1}s")
+                # Find entity links paired with hotel name to get the RIGHT hotel token
+                # Avoid picking up sponsored/nearby hotels listed first
+                token_found = None
+
+                # Method 1: find link whose surrounding text matches hotel name
+                hotel_words = [w.lower() for w in re.split(r'[\s,]+', hotel_name) if len(w) > 3]
+                entity_pattern = re.compile(r'href="[^"]*?/travel/hotels/entity/([A-Za-z0-9_=-]{20,})[^"]*"[^>]*>([^<]{0,200})', re.DOTALL)
+                for em in entity_pattern.finditer(html):
+                    tok, surrounding = em.group(1), em.group(2).lower()
+                    if any(w in surrounding for w in hotel_words):
+                        token_found = tok
+                        debug.append(f"Token matched by name at t={i+1}s: {tok[:20]}...")
+                        break
+
+                # Method 2: find the token that appears most frequently (main result = most links)
+                if not token_found:
+                    all_tokens = re.findall(r"/travel/hotels/entity/([A-Za-z0-9_=-]{20,})", html)
+                    if all_tokens:
+                        from collections import Counter
+                        most_common = Counter(all_tokens).most_common(1)[0][0]
+                        token_found = most_common
+                        debug.append(f"Token by frequency at t={i+1}s: {most_common[:20]}... (appeared {Counter(all_tokens)[most_common]}x)")
+
+                if token_found:
+                    session["token"] = token_found
                     break
             except: pass
             if i == 5:
