@@ -43,7 +43,7 @@ RUN useradd -m -u 1000 appuser \
     && chown -R appuser:appuser /home/appuser/.cache
 
 # Cache-bust: increment this number to force Docker to re-copy app files
-ARG CACHE_BUST=2
+ARG CACHE_BUST=6
 # Copy app
 COPY . .
 RUN chown -R appuser:appuser /app
