@@ -101,20 +101,26 @@ async def get_session_and_token(hotel_name: str) -> dict:
     captured = []
 
     async with async_playwright() as p:
-    print("Chromium exists:", os.path.exists("/usr/bin/chromium"))
+        print("Chromium exists:", os.path.exists("/usr/bin/chromium"))
 
-    browser = await p.chromium.launch(
-        executable_path="/usr/bin/chromium",
-        headless=True,
-        args=[
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-setuid-sandbox",
-            "--single-process",
-            "--no-zygote",
-        ]
+        browser = await p.chromium.launch(
+            executable_path="/usr/bin/chromium",
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-setuid-sandbox",
+                "--single-process",
+                "--no-zygote",
+            ]
+        )
+
+    context = await browser.new_context(
+        viewport={"width": 1400, "height": 900},
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        locale="en-US",
     )
         context = await browser.new_context(
             viewport={"width": 1400, "height": 900},
