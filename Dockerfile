@@ -1,28 +1,27 @@
-# Playwright's official Python image — has Chromium + all system deps pre-installed
-FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+# Use slim Python base and install Chromium deps manually
+FROM python:3.11-slim-bookworm
 
-# Create non-root user (required for Render + improves Chromium sandboxing)
-RUN useradd -m -u 1000 appuser
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium chromium-driver libnss3 libnspr4 libatk1.0-0 \
+    libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+    libasound2 libpango-1.0-0 libcairo2 libx11-6 libx11-xcb1 \
+    libxcb1 libxext6 fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -u 1001 appuser
 
 WORKDIR /app
-
-# Install Python dependencies as root first
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy app files
 COPY . .
-
-# Fix ownership
 RUN chown -R appuser:appuser /app
 
-# Switch to non-root user and install Playwright browsers for this user
 USER appuser
-RUN playwright install chromium
-
-# Render assigns PORT via env var (default 10000)
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV CHROMIUM_PATH=/usr/bin/chromium
 ENV PORT=10000
 EXPOSE 10000
 
-# Use gunicorn for production (more stable than Flask dev server)
 CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 1 app:app
