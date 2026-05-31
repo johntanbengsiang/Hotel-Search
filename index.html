@@ -546,7 +546,7 @@
           <option value="12">12 months</option>
         </select>
       </div>
-      <div class="field" style="min-width:140px;" id="endDateField">
+      <div class="field" style="min-width:140px;display:none;" id="endDateField">
         <label>End Date</label>
         <input type="date" id="endDate" oninput="onDateChange()" />
       </div>
@@ -670,4 +670,429 @@
     [["china","beijing","shanghai","shenzhen","guangzhou"], "cn","CNY","¥"],
     [["london","england","scotland","wales","uk ","united kingdom","britain"], "gb","GBP","£"],
     [["paris","france","nice","lyon","marseille","bordeaux"], "fr","EUR","€"],
-    [["germany","berlin"
+    [["germany","berlin","munich","frankfurt","hamburg"], "de","EUR","€"],
+    [["italy","rome","milan","venice","florence","naples"], "it","EUR","€"],
+    [["spain","barcelona","madrid","seville","ibiza","mallorca"], "es","EUR","€"],
+    [["amsterdam","netherlands"],             "nl","EUR","€"],
+    [["switzerland","zurich","geneva","bern","lucerne"], "ch","CHF","CHF"],
+    [["portugal","lisbon","porto","algarve"], "pt","EUR","€"],
+    [["greece","athens","santorini","mykonos","crete"], "gr","EUR","€"],
+    [["new york","los angeles","chicago","miami","las vegas","san francisco","hawaii","boston","washington","usa","united states"], "us","USD","$"],
+    [["canada","toronto","vancouver","montreal","calgary"], "ca","CAD","CA$"],
+    [["mexico","cancun","cabo","playa del carmen","tulum"], "mx","MXN","MX$"],
+    [["brazil","sao paulo","rio de janeiro"],  "br","BRL","R$"],
+    [["dubai","abu dhabi","uae","emirates"],   "ae","AED","AED"],
+    [["qatar","doha"],                         "qa","QAR","QAR"],
+    [["saudi","riyadh","jeddah"],              "sa","SAR","SAR"],
+    [["india","mumbai","delhi","bangalore","goa","chennai"], "in","INR","₹"],
+    [["maldives"],                             "mv","USD","$"],
+    [["australia","sydney","melbourne","brisbane","perth","queensland"], "au","AUD","A$"],
+    [["new zealand","auckland","queenstown","christchurch"], "nz","NZD","NZ$"],
+    [["south africa","cape town","johannesburg"], "za","ZAR","R"],
+    [["morocco","marrakech","casablanca"],     "ma","MAD","MAD"],
+  ];
+
+  let detectedCurrency = { gl: "us", currency: "USD", symbol: "$" };
+  let confirmedCurrency = null; // set after user sees banner
+
+  function detectCurrency(hotelName) {
+    const lower = hotelName.toLowerCase();
+    for (const [keywords, gl, currency, symbol] of COUNTRY_CURRENCY) {
+      if (keywords.some(k => lower.includes(k))) return { gl, currency, symbol };
+    }
+    return { gl: "us", currency: "USD", symbol: "$" };
+  }
+
+  function showCurrencyBanner(currency) {
+    const banner = document.getElementById('currencyBanner');
+    document.getElementById('currencyDisplay').textContent =
+      `${currency.currency} (${currency.symbol}) · ${currency.gl.toUpperCase()} pricing`;
+    document.getElementById('currencyOverride').value = '';
+    banner.style.display = 'flex';
+  }
+
+  function onHotelInput() {
+    const hotel = document.getElementById('hotel').value.trim();
+    if (hotel.length < 4) return;
+    detectedCurrency = detectCurrency(hotel);
+    confirmedCurrency = detectedCurrency;
+    showCurrencyBanner(detectedCurrency);
+  }
+
+  function onCurrencyOverride() {
+    const val = document.getElementById('currencyOverride').value;
+    if (!val) return;
+    const [currency, symbol, gl] = val.split(',');
+    confirmedCurrency = { currency, symbol, gl };
+    document.getElementById('currencyDisplay').textContent =
+      `${currency} (${symbol}) · ${gl.toUpperCase()} pricing`;
+  }
+
+  // ── Date / month helpers ─────────────────────────────────────────────────
+  const today = new Date();
+
+  // ── Date helpers (timezone-safe) ────────────────────────────────────────
+  // Always work with YYYY-MM-DD strings to avoid UTC vs local timezone issues.
+  // Never pass date strings directly to `new Date()` — it parses as UTC midnight
+  // which shifts the displayed date by -1 day in UTC+ timezones (e.g. Singapore).
+
+  function toDateStr(d) {
+    // d is a local Date object → return YYYY-MM-DD in LOCAL time
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function parseDateStr(s) {
+    // Parse YYYY-MM-DD as LOCAL date (not UTC)
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function addMonths(dateStr, n) {
+    // Add n months to a YYYY-MM-DD string, returns YYYY-MM-DD string
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const result = new Date(y, m - 1 + n, d);
+    // If day overflowed (e.g. Jan 31 + 1 month = Mar 3 not Feb 31),
+    // clamp to last day of target month
+    if (result.getMonth() !== ((m - 1 + n) % 12 + 12) % 12) {
+      result.setDate(0); // last day of previous month
+    }
+    return toDateStr(result);
+  }
+
+  function onMonthChange() {
+    const val = document.getElementById('monthCount').value;
+    const endField = document.getElementById('endDateField');
+    if (val === 'custom') {
+      endField.style.display = 'block';
+      updateDayCount();
+      return;
+    }
+    endField.style.display = 'none';
+    const startVal = document.getElementById('startDate').value;
+    if (startVal) {
+      document.getElementById('endDate').value = addMonths(startVal, parseInt(val));
+    }
+    updateDayCount();
+  }
+
+  function onDateChange() {
+    const val = document.getElementById('monthCount').value;
+    if (val !== 'custom') {
+      const startVal = document.getElementById('startDate').value;
+      if (startVal) {
+        document.getElementById('endDate').value = addMonths(startVal, parseInt(val));
+      }
+    }
+    updateDayCount();
+  }
+
+  function updateDayCount() {
+    const s = document.getElementById('startDate').value;
+    const e = document.getElementById('endDate').value;
+    const el = document.getElementById('dayCount');
+    if (s && e) {
+      const sd = parseDateStr(s);
+      const ed = parseDateStr(e);
+      const days = Math.round((ed - sd) / 86400000);
+      if (days <= 0) {
+        el.textContent = '—'; el.style.color = 'var(--danger)';
+      } else {
+        const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        el.innerHTML = `${fmt(sd)} → ${fmt(ed)}<br><span style="color:var(--muted);font-size:0.75rem;">${days} nights</span>`;
+        el.style.color = 'var(--accent)';
+      }
+    } else {
+      el.textContent = '—';
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  const todayStr = toDateStr(today);
+  document.getElementById('startDate').value = todayStr;
+  document.getElementById('endDate').value = addMonths(todayStr, 3);
+  // endDateField already hidden in HTML; JS keeps it consistent
+  document.getElementById('endDateField').style.display = 'none';
+  onHotelInput();
+  updateDayCount();
+
+  let globalData = null;
+
+  // ── Status helpers ───────────────────────────────────────────────────────
+  function setStatus(msg, isError = false) {
+    const bar = document.getElementById('statusBar');
+    bar.className = 'status-bar visible' + (isError ? ' error' : '');
+    document.getElementById('statusText').textContent = msg;
+    document.getElementById('spinner').style.display = isError ? 'none' : 'block';
+  }
+
+  function hideStatus() {
+    document.getElementById('statusBar').className = 'status-bar';
+  }
+
+  // ── Scrape ───────────────────────────────────────────────────────────────
+  async function runScrape() {
+    const hotel     = document.getElementById('hotel').value.trim();
+    const startDate = document.getElementById('startDate').value;
+    const endDate   = document.getElementById('endDate').value;
+    const currency  = confirmedCurrency || detectedCurrency;
+
+    if (!hotel || !startDate || !endDate) {
+      setStatus('Please fill in all fields.', true); return;
+    }
+    if (new Date(endDate) <= new Date(startDate)) {
+      setStatus('End date must be after start date.', true); return;
+    }
+
+    document.getElementById('runBtn').disabled = true;
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('noteBox').style.display = 'none';
+    setStatus(`Launching browser for "${hotel}" (${currency.currency}) — ~15s…`);
+
+    try {
+      const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5050' : '';
+      const resp = await fetch(apiBase + '/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hotel_name: hotel,
+          start_date: startDate,
+          end_date:   endDate,
+          currency:   currency.currency,
+          gl:         currency.gl,
+        }),
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        setStatus('⚠ ' + (data.error || 'Unknown error'), true);
+        document.getElementById('runBtn').disabled = false;
+        return;
+      }
+
+      globalData = { ...data, symbol: currency.symbol, currency: currency.currency };
+      hideStatus();
+      renderResults(globalData);
+      document.getElementById('noteBox').style.display = 'block';
+    } catch (err) {
+      setStatus('Could not reach the backend. Make sure the server is running.', true);
+    }
+
+    document.getElementById('runBtn').disabled = false;
+  }
+
+  // ── Render results ───────────────────────────────────────────────────────
+  function renderResults(data) {
+    const { results, stats, hotel, symbol, currency } = data;
+    const sym = symbol || '$';
+    const priceResults = results.filter(r => r.price !== null);
+
+    document.getElementById('rateHeader').textContent = `Rate (${currency}/night)`;
+
+    document.getElementById('statsRow').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Overall Avg / Night</div>
+        <div class="stat-value">${stats.overall_average ? sym + stats.overall_average.toLocaleString() : '—'}</div>
+        <div class="stat-sub">across ${stats.total_nights} nights with data</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cheapest Night</div>
+        <div class="stat-value blue">${priceResults.length ? sym + Math.min(...priceResults.map(r=>r.price)).toLocaleString() : '—'}</div>
+        <div class="stat-sub">${priceResults.length ? priceResults.find(r=>r.price===Math.min(...priceResults.map(x=>x.price))).date : ''}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Most Expensive</div>
+        <div class="stat-value white">${priceResults.length ? sym + Math.max(...priceResults.map(r=>r.price)).toLocaleString() : '—'}</div>
+        <div class="stat-sub">${priceResults.length ? priceResults.find(r=>r.price===Math.max(...priceResults.map(x=>x.price))).date : ''}</div>
+      </div>
+    `;
+
+    const monthlyHtml = Object.entries(stats.monthly).map(([month, m]) => `
+      <div class="month-card">
+        <div class="month-name">${month}</div>
+        <div class="month-avg">${sym}${m.average.toLocaleString()}</div>
+        <div class="month-range">${sym}${m.min.toLocaleString()} – ${sym}${m.max.toLocaleString()} · ${m.count} nights</div>
+      </div>
+    `).join('');
+    document.getElementById('monthlyGrid').innerHTML = monthlyHtml ||
+      '<p style="color:var(--muted);font-size:0.85rem;">No price data returned.</p>';
+
+    const maxPrice = priceResults.length ? Math.max(...priceResults.map(r=>r.price)) : 1;
+    let lastMonth = null;
+    const rows = results.map(r => {
+      let monthSep = '';
+      if (r.month !== lastMonth) {
+        lastMonth = r.month;
+        const ma = stats.monthly[r.month];
+        monthSep = `<tr class="month-sep"><td colspan="4">${r.month}${ma ? ' · avg ' + sym + ma.average.toLocaleString() : ''}</td></tr>`;
+      }
+      const isWeekend = r.day_of_week === 'Sat' || r.day_of_week === 'Sun';
+      const monthAvg = stats.monthly[r.month] ? stats.monthly[r.month].average : null;
+      let vsAvg = '—';
+      if (r.price && monthAvg) {
+        const diff = r.price - monthAvg;
+        vsAvg = (diff >= 0 ? '+' : '') + sym + Math.abs(diff).toFixed(0);
+      }
+      const barWidth = r.price ? Math.round((r.price / maxPrice) * 80) : 0;
+      const priceCell = r.price
+        ? `<td class="price">${sym}${r.price.toLocaleString()}<span class="price-bar" style="width:${barWidth}px"></span></td>`
+        : `<td class="price-null">—</td>`;
+
+      return `${monthSep}<tr>
+        <td>${r.date}</td>
+        <td class="${isWeekend ? 'weekend' : ''}">${r.day_of_week}</td>
+        ${priceCell}
+        <td style="color:var(--muted);font-size:0.78rem;">${vsAvg}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('tableBody').innerHTML = rows;
+
+    // Render heatmap
+    renderHeatmap(results, stats, sym);
+
+    document.getElementById('results').style.display = 'block';
+
+    if (data.debug && data.debug.length) {
+      document.getElementById('debugPanel').style.display = 'block';
+      document.getElementById('debugLog').textContent = data.debug.join('\n');
+    }
+  }
+
+  // ── Day × Month heatmap ─────────────────────────────────────────────────
+  function renderHeatmap(results, stats, sym) {
+    const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const DAYS_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const WEEKEND = new Set(['Saturday','Sunday']);
+
+    // Collect unique months in order
+    const months = [];
+    const seen = new Set();
+    for (const r of results) {
+      if (!seen.has(r.month)) { seen.add(r.month); months.push(r.month); }
+    }
+
+    // Build lookup: dayName → monthLabel → [prices]
+    const grid = {};
+    for (const day of DAYS) {
+      grid[day] = {};
+      for (const m of months) grid[day][m] = [];
+    }
+
+    const JS_DAY_TO_NAME = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    for (const r of results) {
+      if (r.price === null) continue;
+      const d = new Date(r.date + 'T00:00:00');
+      const dayName = JS_DAY_TO_NAME[d.getDay()];
+      if (grid[dayName] && grid[dayName][r.month] !== undefined) {
+        grid[dayName][r.month].push(r.price);
+      }
+    }
+
+    // Compute cell averages and global price range for colour scale
+    const cellAvgs = {}; // dayName → month → avg|null
+    let allAvgs = [];
+    for (const day of DAYS) {
+      cellAvgs[day] = {};
+      for (const m of months) {
+        const arr = grid[day][m];
+        const avg = arr.length ? Math.round(arr.reduce((a,b) => a+b, 0) / arr.length) : null;
+        cellAvgs[day][m] = avg;
+        if (avg !== null) allAvgs.push(avg);
+      }
+    }
+
+    // Percentile colour buckets
+    allAvgs.sort((a,b) => a-b);
+    function colourClass(val) {
+      if (val === null) return 'hm-null';
+      const pct = allAvgs.length < 2 ? 0.5
+        : allAvgs.filter(v => v <= val).length / allAvgs.length;
+      if (pct >= 0.80) return 'hm-hot';
+      if (pct >= 0.60) return 'hm-warm';
+      if (pct >= 0.40) return 'hm-mid';
+      if (pct >= 0.20) return 'hm-cool';
+      return 'hm-cold';
+    }
+
+    // Column averages (per month, across all days)
+    const colAvg = {};
+    for (const m of months) {
+      const vals = DAYS.map(d => cellAvgs[d][m]).filter(v => v !== null);
+      colAvg[m] = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
+    }
+
+    // Build table HTML
+    // Header row: Day label col + one col per month
+    const shortMonth = m => {
+      const parts = m.split(' '); // "July 2026"
+      return parts[0].slice(0,3) + '<br><span style="font-size:0.55rem;opacity:0.6">' + parts[1] + '</span>';
+    };
+
+    let thead = '<thead><tr>';
+    thead += '<th class="day-header">Day</th>';
+    for (const m of months) thead += `<th>${shortMonth(m)}</th>`;
+    thead += '</tr></thead>';
+
+    // Data rows
+    let tbody = '<tbody>';
+    for (let i = 0; i < DAYS.length; i++) {
+      const day = DAYS[i];
+      const short = DAYS_SHORT[i];
+      const isWE = WEEKEND.has(day);
+      tbody += `<tr>`;
+      tbody += `<td class="day-label${isWE ? ' weekend' : ''}">${short}</td>`;
+      for (const m of months) {
+        const avg = cellAvgs[day][m];
+        const cls = colourClass(avg);
+        const n = grid[day][m].length;
+        const tooltip = avg !== null
+          ? `title="${day} in ${m}: ${sym}${avg.toLocaleString()} avg (${n} night${n!==1?'s':''})"` : '';
+        tbody += avg !== null
+          ? `<td class="hm-cell ${cls}" ${tooltip}>${sym}${avg.toLocaleString()}</td>`
+          : `<td class="hm-null">—</td>`;
+      }
+      tbody += '</tr>';
+    }
+
+    // Column average footer row
+    tbody += '<tr class="hm-avg-row">';
+    tbody += '<td class="day-label" style="color:var(--muted);font-size:0.65rem;">Avg</td>';
+    for (const m of months) {
+      const v = colAvg[m];
+      tbody += v !== null
+        ? `<td class="avg-val">${sym}${v.toLocaleString()}</td>`
+        : '<td class="hm-null">—</td>';
+    }
+    tbody += '</tr></tbody>';
+
+    document.getElementById('heatmapTable').innerHTML =
+      `<table class="heatmap-table">${thead}${tbody}</table>`;
+  }
+
+  // ── Export CSV ───────────────────────────────────────────────────────────────
+  function exportCSV() {
+    if (!globalData) return;
+    const { results, stats, hotel, symbol, currency } = globalData;
+    const sym = symbol || '$';
+    let csv = `Hotel,Date,Day,Price (${currency}/night),Month,Monthly Avg\n`;
+    results.forEach(r => {
+      const ma = stats.monthly[r.month] ? stats.monthly[r.month].average : '';
+      csv += `"${hotel}",${r.date},${r.day_of_week},${r.price ?? ''},${r.month},${ma}\n`;
+    });
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
+      download: `hotel-rates-${hotel.replace(/\s+/g,'-').toLowerCase()}.csv`
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  document.getElementById('hotel').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runScrape();
+  });
+</script>
+</body>
+</html>
