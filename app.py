@@ -100,6 +100,8 @@ async def get_session_and_token(hotel_name: str) -> dict:
     captured = []
 
     async with async_playwright() as p:
+        print("CHROMIUM_PATH =", chromium_path)
+        print("LAUNCH_KWARGS =", launch_kwargs)
         browser = await p.chromium.launch(
             headless=True,
             args=[
