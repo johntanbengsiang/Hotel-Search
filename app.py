@@ -93,14 +93,20 @@ async def get_session_and_token(hotel_name: str) -> dict:
     1. Load the search page and click into the hotel
     2. Extract the hotel token from the entity URL
     3. Capture cookies + f.sid + bl from a batchexecute request
-    Returns dict with token, cookies, sid, bl, headers
     """
     from playwright.async_api import async_playwright
 
-    session_data = {"token": None, "cookies": {}, "sid": None, "bl": None, "f_sid": None}
+    session_data = {
+        "token": None,
+        "cookies": {},
+        "sid": None,
+        "bl": None,
+        "f_sid": None,
+    }
     captured = []
 
     async with async_playwright() as p:
+
         print("Chromium exists:", os.path.exists("/usr/bin/chromium"))
 
         browser = await p.chromium.launch(
@@ -117,69 +123,89 @@ async def get_session_and_token(hotel_name: str) -> dict:
             ]
         )
 
-    context = await browser.new_context(
-        viewport={"width": 1400, "height": 900},
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        locale="en-US",
-    )
         context = await browser.new_context(
             viewport={"width": 1400, "height": 900},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             locale="en-US",
         )
+
         page = await context.new_page()
+
         await page.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
         )
 
-        # Capture any batchexecute request to get f.sid and bl
         async def on_request(req):
-            if 'batchexecute' in req.url and not captured:
+            if "batchexecute" in req.url and not captured:
                 url = req.url
-                sid_m = re.search(r'f\.sid=(-?\d+)', url)
-                bl_m  = re.search(r'bl=([^&]+)', url)
+
+                sid_m = re.search(r"f\.sid=(-?\d+)", url)
+                bl_m = re.search(r"bl=([^&]+)", url)
+
                 if sid_m:
                     session_data["f_sid"] = sid_m.group(1)
+
                 if bl_m:
                     session_data["bl"] = bl_m.group(1)
+
                 captured.append(True)
 
         page.on("request", on_request)
 
         encoded = quote(hotel_name)
+
         await page.goto(
             f"https://www.google.com/travel/search?q={encoded}&hl=en&gl=sg&curr=USD",
-            wait_until="domcontentloaded", timeout=45000
+            wait_until="domcontentloaded",
+            timeout=45000,
         )
+
         await page.wait_for_timeout(3000)
 
-        # Extract hotel token from entity link href
         links = await page.eval_on_selector_all(
             'a[href*="/travel/hotels/entity/"]',
-            'els => els.map(e => e.href)'
+            "els => els.map(e => e.href)"
         )
+
         for link in links:
-            token_m = re.search(r'/travel/hotels/entity/([A-Za-z0-9_=-]+)', link)
+            token_m = re.search(
+                r"/travel/hotels/entity/([A-Za-z0-9_=-]+)",
+                link
+            )
+
             if token_m:
                 session_data["token"] = token_m.group(1)
                 break
 
-        # Click into hotel to trigger batchexecute calls (for cookies)
         if session_data["token"]:
             try:
-                await page.click('a[href*="/travel/hotels/entity/"]', timeout=5000)
-                await page.wait_for_timeout(2000)
-                await page.get_by_text("Prices", exact=True).first.click(timeout=4000)
-                await page.wait_for_timeout(2000)
-                # Open calendar to trigger yY52ce call
-                await page.mouse.click(433, 215)
-                await page.wait_for_timeout(2500)
-            except Exception:
-                pass
+                await page.click(
+                    'a[href*="/travel/hotels/entity/"]',
+                    timeout=5000
+                )
 
-        # Get cookies
+                await page.wait_for_timeout(2000)
+
+                await page.get_by_text(
+                    "Prices",
+                    exact=True
+                ).first.click(timeout=4000)
+
+                await page.wait_for_timeout(2000)
+
+                await page.mouse.click(433, 215)
+
+                await page.wait_for_timeout(2500)
+
+            except Exception as e:
+                print("Click sequence failed:", e)
+
         cookies = await context.cookies()
-        session_data["cookies"] = {c["name"]: c["value"] for c in cookies}
+
+        session_data["cookies"] = {
+            c["name"]: c["value"]
+            for c in cookies
+        }
 
         await browser.close()
 
