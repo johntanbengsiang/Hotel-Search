@@ -55,13 +55,33 @@ def parse_prices(text):
     except: pass
     return results
 
-def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None):
+# Currency → Google locale mapping
+GL_TIMEZONE = {
+    "sg": "-480", "th": "-420", "id": "-420", "my": "-480", "vn": "-420",
+    "ph": "-480", "jp": "-540", "hk": "-480", "tw": "-480", "kr": "-540",
+    "cn": "-480", "gb": "0",   "fr": "-60",  "de": "-60",  "it": "-60",
+    "es": "-60",  "nl": "-60",  "ch": "-60",  "pt": "0",   "gr": "-120",
+    "us": "300",  "ca": "300",  "mx": "360",  "br": "180", "ae": "-240",
+    "qa": "-180", "sa": "-180", "in": "-330", "mv": "-300","au": "-600",
+    "nz": "-720", "za": "-120", "ma": "0",
+}
+GL_COUNTRY_CODE = {
+    "sg":"SG","th":"TH","id":"ID","my":"MY","vn":"VN","ph":"PH","jp":"JP",
+    "hk":"HK","tw":"TW","kr":"KR","cn":"CN","gb":"GB","fr":"FR","de":"DE",
+    "it":"IT","es":"ES","nl":"NL","ch":"CH","pt":"PT","gr":"GR","us":"US",
+    "ca":"CA","mx":"MX","br":"BR","ae":"AE","qa":"QA","sa":"SA","in":"IN",
+    "mv":"MV","au":"AU","nz":"NZ","za":"ZA","ma":"MA",
+}
+
+def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg"):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, 1], None, token, "SGD"]),
+        json.dumps([None, [start, end, 1], None, token, currency]),
         None, "generic"]]])
+    tz  = GL_TIMEZONE.get(gl, "0")
+    cc  = GL_COUNTRY_CODE.get(gl, "SG")
     params = {"rpcids":"yY52ce","source-path":"/travel/search",
-              "hl":"en","gl":"sg","soc-app":"162",
+              "hl":"en","gl":gl,"soc-app":"162",
               "soc-platform":"1","soc-device":"1","rt":"c"}
     if f_sid: params["f.sid"] = f_sid
     if bl:    params["bl"]    = bl
@@ -70,8 +90,8 @@ def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://www.google.com/travel/search",
         "x-same-domain": "1",
-        "x-goog-ext-259736195-jspb": '["en-US","SG","USD",1,null,[-480],null,null,7,[]]',
-        "x-goog-ext-190139975-jspb": '["SG","ZZ","ZwswOw=="]',
+        "x-goog-ext-259736195-jspb": f'["en-US","{cc}","{currency}",1,null,[{tz}],null,null,7,[]]',
+        "x-goog-ext-190139975-jspb": f'["{cc}","ZZ","ZwswOw=="]',
     }
     r = requests.post(
         "https://www.google.com/_/TravelFrontendUi/data/batchexecute",
@@ -293,7 +313,7 @@ def test_playwright():
 
 # ─── main scrape ─────────────────────────────────────────────────────────────
 
-async def get_session(hotel_name, debug):
+async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
     from playwright.async_api import async_playwright
     import time
 
@@ -334,7 +354,7 @@ async def get_session(hotel_name, debug):
         t0 = time.time()
         try:
             await page.goto(
-                f"https://www.google.com/travel/search?q={quote(hotel_name)}&hl=en&gl=sg&curr=USD",
+                f"https://www.google.com/travel/search?q={quote(hotel_name)}&hl=en&gl={gl}&curr={currency}",
                 wait_until="commit", timeout=60000
             )
             debug.append(f"Page committed at {time.time()-t0:.1f}s")
@@ -377,13 +397,13 @@ async def get_session(hotel_name, debug):
     return session
 
 
-async def scrape_prices(hotel_name, start_date, end_date):
+async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg"):
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end   = datetime.strptime(end_date, "%Y-%m-%d").date()
     debug = []
 
     debug.append("Step 1: Getting browser session...")
-    session = await get_session(hotel_name, debug)
+    session = await get_session(hotel_name, debug, gl=gl, currency=currency)
 
     if not session["token"]:
         return [], debug + [
@@ -398,7 +418,8 @@ async def scrape_prices(hotel_name, start_date, end_date):
     for year, month in months_in_range(start, end):
         status, body = batchexecute(
             session["token"], year, month,
-            session["cookies"], session.get("f_sid"), session.get("bl")
+            session["cookies"], session.get("f_sid"), session.get("bl"),
+            currency=currency, gl=gl
         )
         prices = parse_prices(body)
         debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices")
@@ -434,9 +455,11 @@ def calc_stats(results):
 @app.route("/api/scrape", methods=["POST"])
 def scrape():
     data = request.get_json()
-    hotel = (data.get("hotel_name") or "").strip()
-    s     = (data.get("start_date") or "").strip()
-    e     = (data.get("end_date")   or "").strip()
+    hotel    = (data.get("hotel_name") or "").strip()
+    s        = (data.get("start_date") or "").strip()
+    e        = (data.get("end_date")   or "").strip()
+    currency = (data.get("currency")   or "USD").strip().upper()
+    gl       = (data.get("gl")         or "us").strip().lower()
     if not hotel or not s or not e:
         return jsonify({"error": "Missing fields"}), 400
     try:
@@ -449,7 +472,7 @@ def scrape():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e))
+            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl))
         finally:
             loop.close()
         return jsonify({"hotel":hotel,"start_date":s,"end_date":e,
@@ -467,4 +490,4 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     app.run(debug=False, host="0.0.0.0", port=port)
-    
+  
