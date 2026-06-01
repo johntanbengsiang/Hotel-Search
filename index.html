@@ -50,7 +50,11 @@
       z-index: 1;
       max-width: 1100px;
       margin: 0 auto;
-      padding: 0 24px;
+      padding: 0 12px;
+    }
+
+    @media (min-width: 600px) {
+      .container { padding: 0 24px; }
     }
 
     /* Header */
@@ -80,7 +84,7 @@
 
     h1 {
       font-family: var(--font-serif);
-      font-size: clamp(2rem, 4vw, 3rem);
+      font-size: clamp(1.6rem, 6vw, 3rem);
       line-height: 1;
       letter-spacing: -0.02em;
       color: var(--text);
@@ -104,8 +108,8 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 32px;
-      margin: 36px 0;
+      padding: 20px 16px;
+      margin: 20px 0;
     }
 
     .panel-title {
@@ -119,13 +123,9 @@
 
     .input-grid {
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr auto auto auto;
-      gap: 16px;
+      grid-template-columns: 1fr;
+      gap: 12px;
       align-items: end;
-    }
-
-    @media (max-width: 720px) {
-      .input-grid { grid-template-columns: 1fr; }
     }
 
     .field {
@@ -223,13 +223,13 @@
     /* Stats summary row */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-bottom: 28px;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 20px;
     }
 
-    @media (max-width: 600px) {
-      .stats-row { grid-template-columns: 1fr; }
+    @media (min-width: 600px) {
+      .stats-row { grid-template-columns: repeat(3, 1fr); }
     }
 
     .stat-card {
@@ -279,9 +279,13 @@
 
     .monthly-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 12px;
-      margin-bottom: 36px;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    @media (min-width: 500px) {
+      .monthly-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
     }
 
     .month-card {
@@ -339,9 +343,9 @@
       font-family: var(--font-mono);
       font-size: 0.65rem;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.08em;
       color: var(--muted);
-      padding: 14px 20px;
+      padding: 10px 10px;
       text-align: left;
       white-space: nowrap;
     }
@@ -355,10 +359,10 @@
     tbody tr:hover { background: var(--surface); }
 
     td {
-      padding: 12px 20px;
+      padding: 10px 10px;
       color: var(--text);
       font-family: var(--font-mono);
-      font-size: 0.82rem;
+      font-size: 0.78rem;
     }
 
     td.price { color: var(--accent); font-weight: 500; }
@@ -528,15 +532,9 @@
     <div class="input-grid">
       <div class="field">
         <label>Hotel Name</label>
-        <input type="text" id="hotel" placeholder="Hotel name OR paste Google Hotels URL" value="Marina Bay Sands Singapore" oninput="onHotelInput()" />
+        <input type="text" id="hotel" placeholder="Hotel name or paste Google Hotels URL" value="Marina Bay Sands Singapore" oninput="onHotelInput()" />
       </div>
-      <div class="field" style="grid-column: 1 / -1; margin-top: -8px;">
-        <div style="font-size:0.72rem;color:var(--muted);font-family:var(--font-mono);">
-          💡 For exact prices: paste the Google Hotels URL 
-          (e.g. google.com/travel/hotels/.../entity/<b>CgoI...</b>/prices)
-          instead of just the hotel name
-        </div>
-      </div>
+
       <div class="field">
         <label>Start Date</label>
         <input type="date" id="startDate" oninput="onDateChange()" />
@@ -561,15 +559,7 @@
         <label>Range</label>
         <div id="dayCount" style="font-family:var(--font-mono);font-size:0.82rem;padding:12px 0;color:var(--accent);line-height:1.4;">—</div>
       </div>
-      <div class="field" style="min-width:100px;">
-        <label>Guests</label>
-        <select id="guestsSelect" style="background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--font-sans);font-size:0.95rem;padding:12px 16px;border-radius:10px;outline:none;">
-          <option value="2" selected>2 adults</option>
-          <option value="1">1 adult</option>
-          <option value="3">3 adults</option>
-          <option value="4">4 adults</option>
-        </select>
-      </div>
+
       <button class="btn-run" id="runBtn" onclick="runScrape()">
         Run Scout →
       </button>
@@ -713,6 +703,15 @@
   let confirmedCurrency = null; // set after user sees banner
 
   function detectCurrency(hotelName) {
+    // If it's a Google Hotels URL, extract currency from the URL params
+    const currMatch = hotelName.match(/[?&]curr=([A-Z]{3})/i);
+    if (currMatch) {
+      const curr = currMatch[1].toUpperCase();
+      const symbols = {'SGD':'S$','USD':'$','EUR':'€','GBP':'£','AUD':'A$','JPY':'¥','HKD':'HK$','THB':'฿','MYR':'RM','IDR':'Rp'};
+      const gls    = {'SGD':'sg','USD':'us','EUR':'fr','GBP':'gb','AUD':'au','JPY':'jp','HKD':'hk','THB':'th','MYR':'my','IDR':'id'};
+      return { currency: curr, symbol: symbols[curr]||'$', gl: gls[curr]||'sg' };
+    }
+    const name = hotelName.toLowerCase();
     const lower = hotelName.toLowerCase();
     for (const [keywords, gl, currency, symbol] of COUNTRY_CURRENCY) {
       if (keywords.some(k => lower.includes(k))) return { gl, currency, symbol };
@@ -879,7 +878,7 @@
           end_date:   endDate,
           currency:   currency.currency,
           gl:         currency.gl,
-          guests:     parseInt(document.getElementById('guestsSelect')?.value || '2'),
+
         }),
       });
 

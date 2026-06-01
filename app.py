@@ -73,10 +73,10 @@ GL_COUNTRY_CODE = {
     "mv":"MV","au":"AU","nz":"NZ","za":"ZA","ma":"MA",
 }
 
-def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=2):
+def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=1):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, guests], None, token, currency]),
+        json.dumps([None, [start, end, 1], None, token, currency])  # 1 = standard pricing mode,
         None, "generic"]]])
     tz  = GL_TIMEZONE.get(gl, "0")
     cc  = GL_COUNTRY_CODE.get(gl, "SG")
@@ -443,7 +443,7 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
     return session
 
 
-async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg", guests=2):
+async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg", guests=1):
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end   = datetime.strptime(end_date, "%Y-%m-%d").date()
     debug = []
