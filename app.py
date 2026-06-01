@@ -76,7 +76,7 @@ GL_COUNTRY_CODE = {
 def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=1):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, 1], None, token, currency]),  # 1 = standard pricing mode
+        json.dumps([None, [start, end, 1], None, token, currency]),
         None, "generic"]]])
     tz  = GL_TIMEZONE.get(gl, "0")
     cc  = GL_COUNTRY_CODE.get(gl, "SG")
@@ -438,6 +438,22 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
         cookies = await context.cookies()
         session["cookies"] = {c["name"]: c["value"] for c in cookies}
         debug.append(f"Session: token={'✓' if session['token'] else '✗'} cookies={len(session['cookies'])}")
+
+        # Take a screenshot of the Google Hotels calendar for comparison
+        try:
+            # Navigate to prices tab to show the calendar
+            await page.get_by_text("Prices", exact=True).first.click(timeout=4000)
+            await asyncio.sleep(1.5)
+            # Open the calendar by clicking check-in date field
+            await page.mouse.click(433, 215)
+            await asyncio.sleep(2)
+            # Take screenshot
+            screenshot_bytes = await page.screenshot(full_page=False, type="jpeg", quality=60)
+            session["screenshot"] = base64.b64encode(screenshot_bytes).decode("utf-8")
+            debug.append("Screenshot captured ✓")
+        except Exception as e:
+            debug.append(f"Screenshot skipped: {e}")
+
         await browser.close()
 
     return session
@@ -448,7 +464,7 @@ async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg
     end   = datetime.strptime(end_date, "%Y-%m-%d").date()
     debug = []
 
-    debug.append("Step 1: Getting browser session...")
+    debug.append(f"Step 1: Getting browser session (currency={currency}, gl={gl})...")
     session = await get_session(hotel_name, debug, gl=gl, currency=currency)
 
     if not session["token"]:
@@ -481,7 +497,7 @@ async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg
 
     found = sum(1 for r in results if r["price"])
     debug.append(f"Done: {found}/{len(results)} dates have prices")
-    return results, debug
+    return results, debug, session.get("screenshot")
 
 
 def calc_stats(results):
@@ -504,9 +520,9 @@ def scrape():
     hotel    = (data.get("hotel_name") or "").strip()
     s        = (data.get("start_date") or "").strip()
     e        = (data.get("end_date")   or "").strip()
-    currency = (data.get("currency")   or "USD").strip().upper()
-    gl       = (data.get("gl")         or "us").strip().lower()
-    guests   = int(data.get("guests")  or 2)
+    currency = (data.get("currency")   or "SGD").strip().upper()
+    gl       = (data.get("gl")         or "sg").strip().lower()
+    guests   = int(data.get("guests")  or 1)
     if not hotel or not s or not e:
         return jsonify({"error": "Missing fields"}), 400
     try:
@@ -519,7 +535,7 @@ def scrape():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl, guests=guests))
+            results, debug, screenshot = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl, guests=guests))
         finally:
             loop.close()
         return jsonify({"hotel":hotel,"start_date":s,"end_date":e,

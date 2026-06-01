@@ -575,7 +575,6 @@
         <option value="USD,$,us">USD – US Dollar ($)</option>
         <option value="EUR,€,eu">EUR – Euro (€)</option>
         <option value="GBP,£,gb">GBP – British Pound (£)</option>
-        <option value="USD,$,sg">USD – US Dollar ($) [Google default]</option>
         <option value="SGD,S$,sg">SGD – Singapore Dollar (S$)</option>
         <option value="JPY,¥,jp">JPY – Japanese Yen (¥)</option>
         <option value="AUD,A$,au">AUD – Australian Dollar (A$)</option>
@@ -651,6 +650,18 @@
 
   </div>
 
+  <!-- Google Hotels Screenshot -->
+  <div id="screenshotPanel" style="display:none; margin-bottom:36px;">
+    <h2 class="section-title" style="margin-bottom:12px;">Google Hotels <span>Screenshot</span></h2>
+    <p style="font-size:0.82rem;color:var(--muted);margin-bottom:12px;">
+      This is what Google Hotels showed during the scrape — compare with the prices above.
+    </p>
+    <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+      <img id="screenshotImg" src="" alt="Google Hotels calendar" 
+           style="width:100%;display:block;" />
+    </div>
+  </div>
+
   <!-- Debug log -->
   <div id="debugPanel" style="display:none; margin-bottom:48px;">
     <h2 class="section-title" style="margin-bottom:12px;">Scraper <span>Debug Log</span></h2>
@@ -664,7 +675,7 @@
 <script>
   // ── Currency detection ──────────────────────────────────────────────────
   const COUNTRY_CURRENCY = [
-    [["singapore"," sg ","sentosa"],          "sg","USD","$"],
+    [["singapore"," sg ","sentosa"],          "sg","SGD","S$"],
     [["thailand","bangkok","phuket","pattaya","chiang mai","koh "], "th","THB","฿"],
     [["bali","jakarta","indonesia","lombok"],  "id","IDR","Rp"],
     [["malaysia","kuala lumpur","penang","langkawi"," kl "], "my","MYR","RM"],
@@ -708,7 +719,7 @@
     if (currMatch) {
       const curr = currMatch[1].toUpperCase();
       const symbols = {'SGD':'S$','USD':'$','EUR':'€','GBP':'£','AUD':'A$','JPY':'¥','HKD':'HK$','THB':'฿','MYR':'RM','IDR':'Rp'};
-      const gls    = {'SGD':'sg','USD':'us','EUR':'fr','GBP':'gb','AUD':'au','JPY':'jp','HKD':'hk','THB':'th','MYR':'my','IDR':'id'};
+      const gls    = {'SGD':'sg','USD':'sg','EUR':'fr','GBP':'gb','AUD':'au','JPY':'jp','HKD':'hk','THB':'th','MYR':'my','IDR':'id'}; // keep gl=sg for SG hotels regardless of currency
       return { currency: curr, symbol: symbols[curr]||'$', gl: gls[curr]||'sg' };
     }
     const name = hotelName.toLowerCase();
