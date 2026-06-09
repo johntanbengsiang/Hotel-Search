@@ -39,21 +39,42 @@ def month_window(year, month):
     pyr, pm = (year-1, 12) if month == 1 else (year, month-1)
     return [pyr, pm, monthrange(pyr, pm)[1]], [year, month, monthrange(year, month)[1]]
 
-def parse_prices(text):
+def parse_prices(text, verbose=False):
     results = {}
+    raw_entries = []
     m = re.search(r'\["wrb\.fr","yY52ce","(.+?)",null,null,null', text, re.DOTALL)
     if not m:
-        return results
+        return (results, raw_entries) if verbose else results
     try:
         parsed = json.loads(json.loads('"' + m.group(1) + '"'))
-        for entry in parsed[1]:
+        for idx, entry in enumerate(parsed[1]):
+            entry_info = {"idx": idx}
             try:
-                price = int(re.sub(r'[^\d]', '', entry[1][0]))
-                ci = entry[8][0]
-                results[f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"] = price
-            except: pass
-    except: pass
-    return results
+                price_raw = entry[1][0] if isinstance(entry[1], list) else entry[1]
+                price = int(re.sub(r'[^\d]', '', str(price_raw)))
+                ci = None
+                for pos in [8, 7, 9, 6]:
+                    try:
+                        candidate = entry[pos][0] if isinstance(entry[pos], list) else entry[pos]
+                        if isinstance(candidate, list) and len(candidate) >= 3 and all(isinstance(x, int) for x in candidate[:3]):
+                            ci = candidate
+                            entry_info["date_pos"] = pos
+                            break
+                    except: pass
+                if ci:
+                    date_str = f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"
+                    results[date_str] = price
+                    entry_info.update({"date": date_str, "price": price, "ok": True})
+                else:
+                    entry_info["error"] = "no date in pos 6-9"
+                    entry_info["entry_types"] = [type(x).__name__ for x in entry[:12]] if isinstance(entry, list) else "not_list"
+            except Exception as ex:
+                entry_info["error"] = str(ex)
+                entry_info["entry_preview"] = str(entry)[:120] if entry else "empty"
+            raw_entries.append(entry_info)
+    except Exception as ex:
+        raw_entries.append({"parse_error": str(ex)})
+    return (results, raw_entries) if verbose else results
 
 # Currency → Google locale mapping
 GL_TIMEZONE = {
@@ -76,7 +97,7 @@ GL_COUNTRY_CODE = {
 def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=1):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, 1], None, token, currency]),
+        json.dumps([None, [start, end, guests], None, token, currency]),
         None, "generic"]]])
     tz  = GL_TIMEZONE.get(gl, "0")
     cc  = GL_COUNTRY_CODE.get(gl, "SG")
@@ -483,8 +504,15 @@ async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg
             session["cookies"], session.get("f_sid"), session.get("bl"),
             currency=currency, gl=gl, guests=guests
         )
-        prices = parse_prices(body)
-        debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices")
+        prices, raw_entries = parse_prices(body, verbose=True)
+        ok_count = sum(1 for e in raw_entries if e.get("ok"))
+        err_count = sum(1 for e in raw_entries if "error" in e)
+        date_positions = list(set(e.get("date_pos") for e in raw_entries if "date_pos" in e))
+        debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices (ok={ok_count} err={err_count} date_pos={date_positions})")
+        if err_count > 0:
+            sample_errors = [e for e in raw_entries if "error" in e][:3]
+            for se in sample_errors:
+                debug.append(f"    parse_error: {se}")
         all_prices.update(prices)
 
     results, current = [], start
@@ -513,6 +541,54 @@ def calc_stats(results):
         "total_nights": len(all_p),
     }
 
+
+
+@app.route("/api/diagnose", methods=["POST"])
+def diagnose():
+    """
+    Runs a single batchexecute call for a given token+month and returns the full
+    raw parse results — useful for verifying currency, pax count, and date index.
+    """
+    data = request.get_json()
+    token    = (data.get("token")    or "").strip()
+    year     = int(data.get("year")  or 2026)
+    month    = int(data.get("month") or 7)
+    currency = (data.get("currency") or "USD").strip().upper()
+    gl       = (data.get("gl")       or "us").strip().lower()
+    guests   = int(data.get("guests") or 1)
+
+    if not token:
+        return jsonify({"error": "token required"}), 400
+
+    status, body = batchexecute(token, year, month, currency=currency, gl=gl, guests=guests)
+    prices, raw_entries = parse_prices(body, verbose=True)
+
+    # Also capture the raw inner JSON for manual inspection
+    raw_inner = None
+    m = re.search(r'\["wrb\.fr","yY52ce","(.+?)",null,null,null', body, re.DOTALL)
+    if m:
+        try:
+            raw_inner = json.loads(json.loads('"' + m.group(1) + '"'))
+        except:
+            raw_inner = "parse_failed"
+
+    return jsonify({
+        "http_status": status,
+        "body_len": len(body),
+        "prices_found": len(prices),
+        "prices": prices,
+        "raw_entries": raw_entries,
+        "raw_inner_type": type(raw_inner).__name__ if raw_inner else None,
+        "raw_inner_len": len(raw_inner[1]) if isinstance(raw_inner, list) and len(raw_inner) > 1 and isinstance(raw_inner[1], list) else None,
+        "raw_inner_sample": raw_inner[1][:2] if isinstance(raw_inner, list) and len(raw_inner) > 1 and isinstance(raw_inner[1], list) else raw_inner,
+        "request_params": {
+            "token": token[:25] + "...",
+            "year": year, "month": month,
+            "currency": currency, "gl": gl, "guests": guests,
+        },
+        "month_window": month_window(year, month),
+        "body_preview": body[:300],
+    })
 
 @app.route("/api/scrape", methods=["POST"])
 def scrape():
