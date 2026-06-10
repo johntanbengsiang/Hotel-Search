@@ -50,11 +50,7 @@
       z-index: 1;
       max-width: 1100px;
       margin: 0 auto;
-      padding: 0 12px;
-    }
-
-    @media (min-width: 600px) {
-      .container { padding: 0 24px; }
+      padding: 0 24px;
     }
 
     /* Header */
@@ -84,7 +80,7 @@
 
     h1 {
       font-family: var(--font-serif);
-      font-size: clamp(1.6rem, 6vw, 3rem);
+      font-size: clamp(2rem, 4vw, 3rem);
       line-height: 1;
       letter-spacing: -0.02em;
       color: var(--text);
@@ -108,8 +104,8 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 20px 16px;
-      margin: 20px 0;
+      padding: 32px;
+      margin: 36px 0;
     }
 
     .panel-title {
@@ -123,9 +119,13 @@
 
     .input-grid {
       display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
+      grid-template-columns: 2fr 1fr 1fr auto auto;
+      gap: 16px;
       align-items: end;
+    }
+
+    @media (max-width: 720px) {
+      .input-grid { grid-template-columns: 1fr; }
     }
 
     .field {
@@ -223,13 +223,13 @@
     /* Stats summary row */
     .stats-row {
       display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-      margin-bottom: 20px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
     }
 
-    @media (min-width: 600px) {
-      .stats-row { grid-template-columns: repeat(3, 1fr); }
+    @media (max-width: 600px) {
+      .stats-row { grid-template-columns: 1fr; }
     }
 
     .stat-card {
@@ -279,13 +279,9 @@
 
     .monthly-grid {
       display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-      margin-bottom: 24px;
-    }
-
-    @media (min-width: 500px) {
-      .monthly-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 36px;
     }
 
     .month-card {
@@ -343,9 +339,9 @@
       font-family: var(--font-mono);
       font-size: 0.65rem;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.12em;
       color: var(--muted);
-      padding: 10px 10px;
+      padding: 14px 20px;
       text-align: left;
       white-space: nowrap;
     }
@@ -359,10 +355,10 @@
     tbody tr:hover { background: var(--surface); }
 
     td {
-      padding: 10px 10px;
+      padding: 12px 20px;
       color: var(--text);
       font-family: var(--font-mono);
-      font-size: 0.78rem;
+      font-size: 0.82rem;
     }
 
     td.price { color: var(--accent); font-weight: 500; }
@@ -532,9 +528,8 @@
     <div class="input-grid">
       <div class="field">
         <label>Hotel Name</label>
-        <input type="text" id="hotel" placeholder="Hotel name or paste Google Hotels URL" value="Marina Bay Sands Singapore" oninput="onHotelInput()" />
+        <input type="text" id="hotel" placeholder="e.g. Marina Bay Sands Singapore" value="Marina Bay Sands Singapore" oninput="onHotelInput()" />
       </div>
-
       <div class="field">
         <label>Start Date</label>
         <input type="date" id="startDate" oninput="onDateChange()" />
@@ -559,101 +554,94 @@
         <label>Range</label>
         <div id="dayCount" style="font-family:var(--font-mono);font-size:0.82rem;padding:12px 0;color:var(--accent);line-height:1.4;">—</div>
       </div>
-
-      <!-- Guests -->
-      <div class="field" style="min-width:100px;">
-        <label>Guests</label>
-        <select id="guestsCount" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-size:0.9rem;font-family:var(--font-sans);width:100%;cursor:pointer;">
-          <option value="1" selected>1 guest</option>
-          <option value="2">2 guests</option>
-          <option value="3">3 guests</option>
-          <option value="4">4 guests</option>
-        </select>
-      </div>
-
-      <!-- Currency (always visible) -->
-      <div class="field" style="min-width:160px;">
-        <label>Currency</label>
-        <select id="currencySelect" onchange="onCurrencySelect()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-size:0.9rem;font-family:var(--font-sans);width:100%;cursor:pointer;">
-          <option value="USD,$,us">USD – US Dollar</option>
-          <option value="SGD,S$,sg">SGD – Singapore Dollar</option>
-          <option value="JPY,¥,jp">JPY – Japanese Yen</option>
-          <option value="EUR,€,eu">EUR – Euro</option>
-          <option value="GBP,£,gb">GBP – British Pound</option>
-          <option value="AUD,A$,au">AUD – Australian Dollar</option>
-          <option value="HKD,HK$,hk">HKD – Hong Kong Dollar</option>
-          <option value="CAD,CA$,ca">CAD – Canadian Dollar</option>
-          <option value="CHF,CHF,ch">CHF – Swiss Franc</option>
-          <option value="CNY,¥,cn">CNY – Chinese Yuan</option>
-          <option value="INR,₹,in">INR – Indian Rupee</option>
-          <option value="THB,฿,th">THB – Thai Baht</option>
-          <option value="MYR,RM,my">MYR – Malaysian Ringgit</option>
-          <option value="IDR,Rp,id">IDR – Indonesian Rupiah</option>
-          <option value="AED,AED,ae">AED – UAE Dirham</option>
-          <option value="KRW,₩,kr">KRW – Korean Won</option>
-          <option value="TWD,NT$,tw">TWD – Taiwan Dollar</option>
-          <option value="NZD,NZ$,nz">NZD – New Zealand Dollar</option>
-          <option value="VND,₫,vn">VND – Vietnamese Dong</option>
-          <option value="PHP,₱,ph">PHP – Philippine Peso</option>
-        </select>
-      </div>
-
       <button class="btn-run" id="runBtn" onclick="runScrape()">
         Run Scout →
       </button>
     </div>
 
-
-
-  <!-- Diagnose panel -->
-  <div id="diagnosePanel" style="display:none; margin-bottom:36px;">
-    <h2 class="section-title" style="margin-bottom:12px;">Rate <span>Diagnostics</span></h2>
-    <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;line-height:1.6;">
-      Run a single raw API call to verify what Google actually returns — compare currency, pax count, price values, and which array index holds the date. Token auto-fills from the debug log after a scrape.
-    </p>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;display:grid;gap:14px;">
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;align-items:end;">
-        <div class="field">
-          <label>Hotel Token</label>
-          <input type="text" id="diagToken" placeholder="Paste token from debug log…" style="font-family:var(--font-mono);font-size:0.78rem;" />
-        </div>
-        <div class="field">
-          <label>Month</label>
-          <input type="month" id="diagMonth" style="background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--font-sans);font-size:0.9rem;padding:11px 14px;border-radius:8px;outline:none;width:100%;" />
-        </div>
-        <div class="field">
-          <label>Currency · gl</label>
-          <select id="diagCurrency" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-size:0.9rem;font-family:var(--font-sans);cursor:pointer;width:100%;">
-            <option value="USD,us">USD · us</option>
-            <option value="SGD,sg">SGD · sg</option>
-            <option value="JPY,jp">JPY · jp</option>
-            <option value="EUR,fr">EUR · fr</option>
-            <option value="GBP,gb">GBP · gb</option>
-            <option value="AUD,au">AUD · au</option>
-            <option value="HKD,hk">HKD · hk</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Guests</label>
-          <select id="diagGuests" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-size:0.9rem;font-family:var(--font-sans);cursor:pointer;width:100%;">
-            <option value="1">1 guest</option>
-            <option value="2">2 guests</option>
-            <option value="3">3 guests</option>
-            <option value="4">4 guests</option>
-          </select>
-        </div>
-        <button onclick="runDiagnose()" style="background:var(--accent2);color:#0e0f11;font-family:var(--font-sans);font-weight:500;font-size:0.9rem;padding:11px 20px;border:none;border-radius:8px;cursor:pointer;white-space:nowrap;height:fit-content;">
-          Run →
-        </button>
-      </div>
-      <div id="diagResult" style="display:none;border-top:1px solid var(--border);padding-top:16px;">
-        <div id="diagSummary" style="font-size:0.85rem;color:var(--muted);margin-bottom:12px;line-height:1.9;"></div>
-        <details>
-          <summary style="font-family:var(--font-mono);font-size:0.7rem;color:var(--muted);cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;">Raw entry breakdown</summary>
-          <pre id="diagRaw" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted);white-space:pre-wrap;line-height:1.6;margin-top:10px;max-height:400px;overflow-y:auto;background:var(--bg);padding:12px;border-radius:8px;"></pre>
-        </details>
-      </div>
+    <!-- Currency confirmation banner -->
+    <div id="currencyBanner" style="display:none;margin-top:16px;padding:14px 18px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;display:none;align-items:center;gap:14px;flex-wrap:wrap;">
+      <span style="font-size:0.85rem;color:var(--muted);">Detected currency:</span>
+      <span id="currencyDisplay" style="font-family:var(--font-mono);color:var(--accent);font-size:0.95rem;font-weight:500;"></span>
+      <span style="font-size:0.82rem;color:var(--muted);">· Not right?</span>
+      <select id="currencyOverride" onchange="onCurrencyOverride()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:0.82rem;font-family:var(--font-mono);cursor:pointer;">
+        <option value="">Change currency…</option>
+        <option value="USD,$,us">USD – US Dollar ($)</option>
+        <option value="EUR,€,eu">EUR – Euro (€)</option>
+        <option value="GBP,£,gb">GBP – British Pound (£)</option>
+        <option value="SGD,S$,sg">SGD – Singapore Dollar (S$)</option>
+        <option value="JPY,¥,jp">JPY – Japanese Yen (¥)</option>
+        <option value="AUD,A$,au">AUD – Australian Dollar (A$)</option>
+        <option value="HKD,HK$,hk">HKD – Hong Kong Dollar (HK$)</option>
+        <option value="CAD,CA$,ca">CAD – Canadian Dollar (CA$)</option>
+        <option value="CHF,CHF,ch">CHF – Swiss Franc (CHF)</option>
+        <option value="CNY,¥,cn">CNY – Chinese Yuan (¥)</option>
+        <option value="INR,₹,in">INR – Indian Rupee (₹)</option>
+        <option value="THB,฿,th">THB – Thai Baht (฿)</option>
+        <option value="MYR,RM,my">MYR – Malaysian Ringgit (RM)</option>
+        <option value="IDR,Rp,id">IDR – Indonesian Rupiah (Rp)</option>
+        <option value="AED,AED,ae">AED – UAE Dirham (AED)</option>
+        <option value="KRW,₩,kr">KRW – Korean Won (₩)</option>
+        <option value="TWD,NT$,tw">TWD – Taiwan Dollar (NT$)</option>
+        <option value="VND,₫,vn">VND – Vietnamese Dong (₫)</option>
+        <option value="ZAR,R,za">ZAR – South African Rand (R)</option>
+        <option value="BRL,R$,br">BRL – Brazilian Real (R$)</option>
+        <option value="MXN,MX$,mx">MXN – Mexican Peso (MX$)</option>
+        <option value="NZD,NZ$,nz">NZD – New Zealand Dollar (NZ$)</option>
+        <option value="QAR,QAR,qa">QAR – Qatari Riyal (QAR)</option>
+        <option value="SAR,SAR,sa">SAR – Saudi Riyal (SAR)</option>
+        <option value="MAD,MAD,ma">MAD – Moroccan Dirham (MAD)</option>
+        <option value="PHP,₱,ph">PHP – Philippine Peso (₱)</option>
+      </select>
     </div>
+  </div>
+
+  <!-- Status -->
+  <div class="status-bar" id="statusBar">
+    <div class="spinner" id="spinner"></div>
+    <span id="statusText">Connecting to Google Hotels…</span>
+  </div>
+
+  <!-- Note -->
+  <div class="note" id="noteBox" style="display:none;">
+    <strong>How it works:</strong> The browser launches once (~15s) to authenticate and find the hotel, 
+    then fetches prices via Google's internal API — <strong>one call per month, ~1 second each</strong>. 
+    A full year takes about 25 seconds total. Prices shown in the detected local currency. 
+    Check the debug log if prices are missing.
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="results-header">
+      <h2 class="section-title">Monthly <span>Averages</span></h2>
+      <button class="btn-export" onclick="exportCSV()">⬇ Export CSV</button>
+    </div>
+
+    <div class="monthly-grid" id="monthlyGrid"></div>
+
+    <h2 class="section-title" style="margin-bottom:16px;">Day-of-Week <span>Price Matrix</span></h2>
+    <div class="heatmap-wrap">
+      <div id="heatmapTable"></div>
+    </div>
+
+    <h2 class="section-title" style="margin-bottom:16px;">Full <span>Night-by-Night</span> Rates</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Day</th>
+            <th id="rateHeader">Rate / night</th>
+            <th>vs Monthly Avg</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
   </div>
 
   <!-- Debug log -->
@@ -708,15 +696,6 @@
   let confirmedCurrency = null; // set after user sees banner
 
   function detectCurrency(hotelName) {
-    // If it's a Google Hotels URL, extract currency from the URL params
-    const currMatch = hotelName.match(/[?&]curr=([A-Z]{3})/i);
-    if (currMatch) {
-      const curr = currMatch[1].toUpperCase();
-      const symbols = {'SGD':'S$','USD':'$','EUR':'€','GBP':'£','AUD':'A$','JPY':'¥','HKD':'HK$','THB':'฿','MYR':'RM','IDR':'Rp'};
-      const gls    = {'SGD':'sg','USD':'sg','EUR':'fr','GBP':'gb','AUD':'au','JPY':'jp','HKD':'hk','THB':'th','MYR':'my','IDR':'id'}; // keep gl=sg for SG hotels regardless of currency
-      return { currency: curr, symbol: symbols[curr]||'$', gl: gls[curr]||'sg' };
-    }
-    const name = hotelName.toLowerCase();
     const lower = hotelName.toLowerCase();
     for (const [keywords, gl, currency, symbol] of COUNTRY_CURRENCY) {
       if (keywords.some(k => lower.includes(k))) return { gl, currency, symbol };
@@ -724,32 +703,30 @@
     return { gl: "us", currency: "USD", symbol: "$" };
   }
 
-  // showCurrencyBanner removed — using inline select
+  function showCurrencyBanner(currency) {
+    const banner = document.getElementById('currencyBanner');
+    document.getElementById('currencyDisplay').textContent =
+      `${currency.currency} (${currency.symbol}) · ${currency.gl.toUpperCase()} pricing`;
+    document.getElementById('currencyOverride').value = '';
+    banner.style.display = 'flex';
+  }
 
   function onHotelInput() {
     const hotel = document.getElementById('hotel').value.trim();
     if (hotel.length < 4) return;
     detectedCurrency = detectCurrency(hotel);
     confirmedCurrency = detectedCurrency;
-    // Sync to the always-visible currency select
-    const sel = document.getElementById('currencySelect');
-    if (sel) {
-      // Try to find a matching option
-      for (let i = 0; i < sel.options.length; i++) {
-        const [cur] = sel.options[i].value.split(',');
-        if (cur === detectedCurrency.currency) { sel.selectedIndex = i; break; }
-      }
-    }
+    showCurrencyBanner(detectedCurrency);
   }
 
-  function onCurrencySelect() {
-    const val = document.getElementById('currencySelect').value;
+  function onCurrencyOverride() {
+    const val = document.getElementById('currencyOverride').value;
     if (!val) return;
     const [currency, symbol, gl] = val.split(',');
     confirmedCurrency = { currency, symbol, gl };
+    document.getElementById('currencyDisplay').textContent =
+      `${currency} (${symbol}) · ${gl.toUpperCase()} pricing`;
   }
-
-  // onCurrencyOverride removed — using inline select
 
   // ── Date / month helpers ─────────────────────────────────────────────────
   const today = new Date();
@@ -860,14 +837,7 @@
     const hotel     = document.getElementById('hotel').value.trim();
     const startDate = document.getElementById('startDate').value;
     const endDate   = document.getElementById('endDate').value;
-    // Always read from the explicit currency select first
-    const curSel    = document.getElementById('currencySelect');
-    if (curSel && curSel.value) {
-      const [currency, symbol, gl] = curSel.value.split(',');
-      confirmedCurrency = { currency, symbol, gl };
-    }
     const currency  = confirmedCurrency || detectedCurrency;
-    const guests    = parseInt(document.getElementById('guestsCount').value) || 1;
 
     if (!hotel || !startDate || !endDate) {
       setStatus('Please fill in all fields.', true); return;
@@ -879,7 +849,7 @@
     document.getElementById('runBtn').disabled = true;
     document.getElementById('results').style.display = 'none';
     document.getElementById('noteBox').style.display = 'none';
-    setStatus(`Launching browser for "${hotel}" · ${currency.currency} · ${guests} guest${guests>1?'s':''} — ~15s…`);
+    setStatus(`Launching browser for "${hotel}" (${currency.currency}) — ~15s…`);
 
     try {
       const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5050' : '';
@@ -892,7 +862,6 @@
           end_date:   endDate,
           currency:   currency.currency,
           gl:         currency.gl,
-          guests:     guests,
         }),
       });
 
@@ -985,27 +954,6 @@
     renderHeatmap(results, stats, sym);
 
     document.getElementById('results').style.display = 'block';
-
-    // Show diagnose panel and pre-fill token from debug log
-    const tokenMatch = (data.debug || []).join('\n').match(/token[^:]*:[^C]*(Ch[A-Za-z0-9_=\-]{15,})/);
-    if (tokenMatch) {
-      document.getElementById('diagToken').value = tokenMatch[1];
-    }
-    // Pre-fill month to start of search range
-    if (data.start_date) {
-      const ym = data.start_date.slice(0,7);
-      document.getElementById('diagMonth').value = ym;
-    }
-    // Sync currency to diagnose panel
-    const curSel2 = document.getElementById('currencySelect');
-    if (curSel2) {
-      const diagCur = document.getElementById('diagCurrency');
-      const [selCur] = curSel2.value.split(',');
-      for (let i = 0; i < diagCur.options.length; i++) {
-        if (diagCur.options[i].value.startsWith(selCur + ',')) { diagCur.selectedIndex = i; break; }
-      }
-    }
-    document.getElementById('diagnosePanel').style.display = 'block';
 
     if (data.debug && data.debug.length) {
       document.getElementById('debugPanel').style.display = 'block';
@@ -1122,65 +1070,6 @@
 
     document.getElementById('heatmapTable').innerHTML =
       `<table class="heatmap-table">${thead}${tbody}</table>`;
-  }
-
-  // ── Diagnose ─────────────────────────────────────────────────────────────
-  async function runDiagnose() {
-    const token = document.getElementById('diagToken').value.trim();
-    const monthVal = document.getElementById('diagMonth').value; // "2026-07"
-    const [curCode, curGl] = document.getElementById('diagCurrency').value.split(',');
-    const guests = parseInt(document.getElementById('diagGuests').value) || 1;
-    const sym = {'USD':'$','SGD':'S$','JPY':'¥','EUR':'€','GBP':'£','AUD':'A$','HKD':'HK$','CAD':'CA$'}[curCode] || curCode;
-
-    if (!token || !monthVal) {
-      alert('Fill in token and month first.'); return;
-    }
-    const [year, month] = monthVal.split('-').map(Number);
-
-    const btn = event.target;
-    btn.textContent = 'Running…'; btn.disabled = true;
-
-    try {
-      const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5050' : '';
-      const resp = await fetch(apiBase + '/api/diagnose', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, year, month, currency: curCode, gl: curGl, guests }),
-      });
-      const d = await resp.json();
-      document.getElementById('diagResult').style.display = 'block';
-
-      if (d.error) {
-        document.getElementById('diagSummary').innerHTML = `<span style="color:var(--danger)">Error: ${d.error}</span>`;
-        return;
-      }
-
-      const prices = d.prices || {};
-      const entries = d.raw_entries || [];
-      const okCount = entries.filter(e => e.ok).length;
-      const errCount = entries.filter(e => e.error).length;
-      const datePosSet = [...new Set(entries.filter(e => e.date_pos != null).map(e => e.date_pos))];
-      const priceList = Object.entries(prices).sort().slice(0,10)
-        .map(([dt,p]) => `${dt}: ${sym}${p.toLocaleString()}`).join('  ·  ');
-
-      document.getElementById('diagSummary').innerHTML = [
-        `<strong style="color:var(--text)">HTTP ${d.http_status}</strong> · body ${(d.body_len/1024).toFixed(1)}KB · <strong style="color:var(--accent)">${d.prices_found} prices returned</strong>`,
-        `Entries: <span style="color:var(--success)">${okCount} ok</span> · <span style="color:${errCount?'var(--danger)':'var(--muted)}'}">${errCount} errors</span> · date field at position: <span style="color:var(--accent2)">[${datePosSet.join(', ') || '—'}]</span>`,
-        `Currency: <span style="color:var(--accent)">${curCode}</span> · gl: <span style="color:var(--accent)">${curGl}</span> · guests: <span style="color:var(--accent)">${guests}</span>`,
-        priceList ? `Sample rates: <span style="color:var(--accent);font-family:var(--font-mono);font-size:0.8rem;">${priceList}</span>` : '<span style="color:var(--danger)">No prices parsed — check raw entries below</span>',
-      ].join('<br>');
-
-      document.getElementById('diagRaw').textContent = JSON.stringify({
-        request: d.request_params,
-        month_window: d.month_window,
-        raw_entries: d.raw_entries,
-        raw_inner_sample: d.raw_inner_sample,
-      }, null, 2);
-    } catch(err) {
-      document.getElementById('diagResult').style.display = 'block';
-      document.getElementById('diagSummary').innerHTML = `<span style="color:var(--danger)">Fetch error: ${err.message}</span>`;
-    }
-    btn.textContent = 'Run Diagnose →'; btn.disabled = false;
   }
 
   // ── Export CSV ───────────────────────────────────────────────────────────────
