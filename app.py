@@ -39,42 +39,21 @@ def month_window(year, month):
     pyr, pm = (year-1, 12) if month == 1 else (year, month-1)
     return [pyr, pm, monthrange(pyr, pm)[1]], [year, month, monthrange(year, month)[1]]
 
-def parse_prices(text, verbose=False):
+def parse_prices(text):
     results = {}
-    raw_entries = []
     m = re.search(r'\["wrb\.fr","yY52ce","(.+?)",null,null,null', text, re.DOTALL)
     if not m:
-        return (results, raw_entries) if verbose else results
+        return results
     try:
         parsed = json.loads(json.loads('"' + m.group(1) + '"'))
-        for idx, entry in enumerate(parsed[1]):
-            entry_info = {"idx": idx}
+        for entry in parsed[1]:
             try:
-                price_raw = entry[1][0] if isinstance(entry[1], list) else entry[1]
-                price = int(re.sub(r'[^\d]', '', str(price_raw)))
-                ci = None
-                for pos in [8, 7, 9, 6]:
-                    try:
-                        candidate = entry[pos][0] if isinstance(entry[pos], list) else entry[pos]
-                        if isinstance(candidate, list) and len(candidate) >= 3 and all(isinstance(x, int) for x in candidate[:3]):
-                            ci = candidate
-                            entry_info["date_pos"] = pos
-                            break
-                    except: pass
-                if ci:
-                    date_str = f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"
-                    results[date_str] = price
-                    entry_info.update({"date": date_str, "price": price, "ok": True})
-                else:
-                    entry_info["error"] = "no date in pos 6-9"
-                    entry_info["entry_types"] = [type(x).__name__ for x in entry[:12]] if isinstance(entry, list) else "not_list"
-            except Exception as ex:
-                entry_info["error"] = str(ex)
-                entry_info["entry_preview"] = str(entry)[:120] if entry else "empty"
-            raw_entries.append(entry_info)
-    except Exception as ex:
-        raw_entries.append({"parse_error": str(ex)})
-    return (results, raw_entries) if verbose else results
+                price = int(re.sub(r'[^\d]', '', entry[1][0]))
+                ci = entry[8][0]
+                results[f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"] = price
+            except: pass
+    except: pass
+    return results
 
 # Currency → Google locale mapping
 GL_TIMEZONE = {
@@ -94,10 +73,10 @@ GL_COUNTRY_CODE = {
     "mv":"MV","au":"AU","nz":"NZ","za":"ZA","ma":"MA",
 }
 
-def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=1):
+def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg"):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, guests], None, token, currency]),
+        json.dumps([None, [start, end, 1], None, token, currency]),
         None, "generic"]]])
     tz  = GL_TIMEZONE.get(gl, "0")
     cc  = GL_COUNTRY_CODE.get(gl, "SG")
@@ -334,33 +313,12 @@ def test_playwright():
 
 # ─── main scrape ─────────────────────────────────────────────────────────────
 
-def extract_token_from_input(hotel_input):
-    """If user pastes a Google Hotels URL or entity token directly, extract it."""
-    import re
-    # Match /entity/TOKEN or entity/TOKEN
-    m = re.search(r'/entity/([A-Za-z0-9_=-]{15,})', hotel_input)
-    if m:
-        return m.group(1)
-    # Match raw token format (starts with Ch or Cg, base64-like)
-    m = re.match(r'^(Ch[A-Za-z0-9_=-]{15,})$', hotel_input.strip())
-    if m:
-        return m.group(1)
-    return None
-
 async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
     from playwright.async_api import async_playwright
     import time
 
     proxy_url = os.environ.get("PROXY_URL")
     session = {"token": None, "cookies": {}, "f_sid": None, "bl": None}
-
-    # Check if user pasted a Google Hotels URL or token directly
-    direct_token = extract_token_from_input(hotel_name)
-    if direct_token:
-        debug.append(f"Using token from URL/input: {direct_token[:20]}...")
-        session["token"] = direct_token
-        # Still need cookies + f_sid for the API call, so continue with browser
-        # but skip the token search loop
 
     async with async_playwright() as p:
         launch_kwargs = dict(
@@ -406,40 +364,15 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
             return session
 
         for i in range(30):
-            if session["token"]:  # Already have token (from URL input or earlier)
-                await asyncio.sleep(2)  # Still wait briefly for cookies/f_sid
-                debug.append("Token already set, collecting cookies only")
-                break
             await asyncio.sleep(1)
             try:
                 html = await page.content()
                 if len(html) < 500 and i < 5:
                     debug.append(f"t={i+1}s: short page ({len(html)} chars) - may be blocked")
-                # Find entity links paired with hotel name to get the RIGHT hotel token
-                # Avoid picking up sponsored/nearby hotels listed first
-                token_found = None
-
-                # Method 1: find link whose surrounding text matches hotel name
-                hotel_words = [w.lower() for w in re.split(r'[\s,]+', hotel_name) if len(w) > 3]
-                entity_pattern = re.compile(r'href="[^"]*?/travel/hotels/entity/([A-Za-z0-9_=-]{20,})[^"]*"[^>]*>([^<]{0,200})', re.DOTALL)
-                for em in entity_pattern.finditer(html):
-                    tok, surrounding = em.group(1), em.group(2).lower()
-                    if any(w in surrounding for w in hotel_words):
-                        token_found = tok
-                        debug.append(f"Token matched by name at t={i+1}s: {tok[:20]}...")
-                        break
-
-                # Method 2: find the token that appears most frequently (main result = most links)
-                if not token_found:
-                    all_tokens = re.findall(r"/travel/hotels/entity/([A-Za-z0-9_=-]{20,})", html)
-                    if all_tokens:
-                        from collections import Counter
-                        most_common = Counter(all_tokens).most_common(1)[0][0]
-                        token_found = most_common
-                        debug.append(f"Token by frequency at t={i+1}s: {most_common[:20]}... (appeared {Counter(all_tokens)[most_common]}x)")
-
-                if token_found:
-                    session["token"] = token_found
+                tokens = re.findall(r"/travel/hotels/entity/([A-Za-z0-9_=-]{20,})", html)
+                if tokens:
+                    session["token"] = tokens[0]
+                    debug.append(f"Token found at t={i+1}s")
                     break
             except: pass
             if i == 5:
@@ -459,33 +392,17 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
         cookies = await context.cookies()
         session["cookies"] = {c["name"]: c["value"] for c in cookies}
         debug.append(f"Session: token={'✓' if session['token'] else '✗'} cookies={len(session['cookies'])}")
-
-        # Take a screenshot of the Google Hotels calendar for comparison
-        try:
-            # Navigate to prices tab to show the calendar
-            await page.get_by_text("Prices", exact=True).first.click(timeout=4000)
-            await asyncio.sleep(1.5)
-            # Open the calendar by clicking check-in date field
-            await page.mouse.click(433, 215)
-            await asyncio.sleep(2)
-            # Take screenshot
-            screenshot_bytes = await page.screenshot(full_page=False, type="jpeg", quality=60)
-            session["screenshot"] = base64.b64encode(screenshot_bytes).decode("utf-8")
-            debug.append("Screenshot captured ✓")
-        except Exception as e:
-            debug.append(f"Screenshot skipped: {e}")
-
         await browser.close()
 
     return session
 
 
-async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg", guests=1):
+async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg"):
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end   = datetime.strptime(end_date, "%Y-%m-%d").date()
     debug = []
 
-    debug.append(f"Step 1: Getting browser session (currency={currency}, gl={gl})...")
+    debug.append("Step 1: Getting browser session...")
     session = await get_session(hotel_name, debug, gl=gl, currency=currency)
 
     if not session["token"]:
@@ -502,17 +419,10 @@ async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg
         status, body = batchexecute(
             session["token"], year, month,
             session["cookies"], session.get("f_sid"), session.get("bl"),
-            currency=currency, gl=gl, guests=guests
+            currency=currency, gl=gl
         )
-        prices, raw_entries = parse_prices(body, verbose=True)
-        ok_count = sum(1 for e in raw_entries if e.get("ok"))
-        err_count = sum(1 for e in raw_entries if "error" in e)
-        date_positions = list(set(e.get("date_pos") for e in raw_entries if "date_pos" in e))
-        debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices (ok={ok_count} err={err_count} date_pos={date_positions})")
-        if err_count > 0:
-            sample_errors = [e for e in raw_entries if "error" in e][:3]
-            for se in sample_errors:
-                debug.append(f"    parse_error: {se}")
+        prices = parse_prices(body)
+        debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices")
         all_prices.update(prices)
 
     results, current = [], start
@@ -525,7 +435,7 @@ async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg
 
     found = sum(1 for r in results if r["price"])
     debug.append(f"Done: {found}/{len(results)} dates have prices")
-    return results, debug, session.get("screenshot")
+    return results, debug
 
 
 def calc_stats(results):
@@ -542,63 +452,14 @@ def calc_stats(results):
     }
 
 
-
-@app.route("/api/diagnose", methods=["POST"])
-def diagnose():
-    """
-    Runs a single batchexecute call for a given token+month and returns the full
-    raw parse results — useful for verifying currency, pax count, and date index.
-    """
-    data = request.get_json()
-    token    = (data.get("token")    or "").strip()
-    year     = int(data.get("year")  or 2026)
-    month    = int(data.get("month") or 7)
-    currency = (data.get("currency") or "USD").strip().upper()
-    gl       = (data.get("gl")       or "us").strip().lower()
-    guests   = int(data.get("guests") or 1)
-
-    if not token:
-        return jsonify({"error": "token required"}), 400
-
-    status, body = batchexecute(token, year, month, currency=currency, gl=gl, guests=guests)
-    prices, raw_entries = parse_prices(body, verbose=True)
-
-    # Also capture the raw inner JSON for manual inspection
-    raw_inner = None
-    m = re.search(r'\["wrb\.fr","yY52ce","(.+?)",null,null,null', body, re.DOTALL)
-    if m:
-        try:
-            raw_inner = json.loads(json.loads('"' + m.group(1) + '"'))
-        except:
-            raw_inner = "parse_failed"
-
-    return jsonify({
-        "http_status": status,
-        "body_len": len(body),
-        "prices_found": len(prices),
-        "prices": prices,
-        "raw_entries": raw_entries,
-        "raw_inner_type": type(raw_inner).__name__ if raw_inner else None,
-        "raw_inner_len": len(raw_inner[1]) if isinstance(raw_inner, list) and len(raw_inner) > 1 and isinstance(raw_inner[1], list) else None,
-        "raw_inner_sample": raw_inner[1][:2] if isinstance(raw_inner, list) and len(raw_inner) > 1 and isinstance(raw_inner[1], list) else raw_inner,
-        "request_params": {
-            "token": token[:25] + "...",
-            "year": year, "month": month,
-            "currency": currency, "gl": gl, "guests": guests,
-        },
-        "month_window": month_window(year, month),
-        "body_preview": body[:300],
-    })
-
 @app.route("/api/scrape", methods=["POST"])
 def scrape():
     data = request.get_json()
     hotel    = (data.get("hotel_name") or "").strip()
     s        = (data.get("start_date") or "").strip()
     e        = (data.get("end_date")   or "").strip()
-    currency = (data.get("currency")   or "SGD").strip().upper()
-    gl       = (data.get("gl")         or "sg").strip().lower()
-    guests   = int(data.get("guests")  or 1)
+    currency = (data.get("currency")   or "USD").strip().upper()
+    gl       = (data.get("gl")         or "us").strip().lower()
     if not hotel or not s or not e:
         return jsonify({"error": "Missing fields"}), 400
     try:
@@ -611,7 +472,7 @@ def scrape():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results, debug, screenshot = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl, guests=guests))
+            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl))
         finally:
             loop.close()
         return jsonify({"hotel":hotel,"start_date":s,"end_date":e,
@@ -629,3 +490,4 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
     app.run(debug=False, host="0.0.0.0", port=port)
+  
