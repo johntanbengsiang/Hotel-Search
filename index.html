@@ -766,6 +766,27 @@
     </div>
   </div>
 
+  <!-- Raw API Inspector -->
+  <div style="margin-bottom:48px;">
+    <h2 class="section-title" style="margin-bottom:8px;">API <span>Inspector</span></h2>
+    <p style="color:var(--muted);font-size:0.82rem;margin-bottom:16px;">Dumps the raw batchexecute response structure to verify price field indices. Uses the same hotel/currency/guests as the search panel above.</p>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+      <div class="field" style="min-width:80px;">
+        <label>Year</label>
+        <input type="number" id="dumpYear" value="2026" style="width:90px;padding:10px 12px;" />
+      </div>
+      <div class="field" style="min-width:80px;">
+        <label>Month (1–12)</label>
+        <input type="number" id="dumpMonth" value="7" min="1" max="12" style="width:80px;padding:10px 12px;" />
+      </div>
+      <button class="btn-export" style="margin-bottom:0;margin-top:22px;" onclick="runDumpRaw()">⚙ Dump Raw Structure</button>
+      <span id="dumpStatus" style="font-family:var(--font-mono);font-size:0.78rem;color:var(--muted);"></span>
+    </div>
+    <div id="dumpOutput" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;overflow-x:auto;">
+      <pre id="dumpLog" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted);white-space:pre-wrap;line-height:1.6;"></pre>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -1309,6 +1330,41 @@
     });
     a.click();
     URL.revokeObjectURL(a.href);
+  }
+
+  // ── API Inspector (dump-raw) ─────────────────────────────────────────────
+  async function runDumpRaw() {
+    const hotel    = document.getElementById('hotel').value.trim();
+    const currency = confirmedCurrency || detectedCurrency;
+    const guests   = parseInt(document.getElementById('guestsCount').value, 10);
+    const year     = parseInt(document.getElementById('dumpYear').value, 10);
+    const month    = parseInt(document.getElementById('dumpMonth').value, 10);
+
+    if (!hotel) { alert('Enter a hotel name in the search panel first.'); return; }
+
+    document.getElementById('dumpStatus').textContent = 'Running… (~15s for browser session)';
+    document.getElementById('dumpOutput').style.display = 'none';
+
+    try {
+      const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5050' : '';
+      const resp = await fetch(apiBase + '/api/dump-raw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hotel_name: hotel,
+          year, month,
+          currency: currency.currency,
+          gl:       currency.gl,
+          guests,
+        }),
+      });
+      const data = await resp.json();
+      document.getElementById('dumpStatus').textContent = 'Done.';
+      document.getElementById('dumpOutput').style.display = 'block';
+      document.getElementById('dumpLog').textContent = JSON.stringify(data, null, 2);
+    } catch (err) {
+      document.getElementById('dumpStatus').textContent = 'Error: ' + err.message;
+    }
   }
 
   document.getElementById('hotel').addEventListener('keydown', e => {
