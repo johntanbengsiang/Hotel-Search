@@ -506,6 +506,86 @@
       border-top: 1px solid var(--border);
     }
     .hm-avg-row td.avg-val { color: var(--accent2); font-weight: 500; }
+
+    /* Row average column in heatmap */
+    .heatmap-table td.row-avg-val {
+      background: var(--surface2);
+      color: var(--accent2);
+      font-weight: 500;
+      border-left: 1px solid var(--border);
+      font-size: 0.75rem;
+    }
+    .heatmap-table th.row-avg-header {
+      background: var(--surface2);
+      border-left: 1px solid var(--border);
+      color: var(--accent2);
+      font-size: 0.6rem;
+    }
+    .heatmap-table td.corner-avg {
+      background: var(--surface2);
+      color: var(--accent);
+      font-weight: 600;
+      border-left: 1px solid var(--border);
+      border-top: 1px solid var(--border);
+      font-size: 0.75rem;
+    }
+
+    /* FX conversion row */
+    .fx-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 16px;
+      padding: 14px 18px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      flex-wrap: wrap;
+    }
+    .fx-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .fx-toggle input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .fx-toggle span {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+    .fx-fields {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .fx-fields input[type="text"],
+    .fx-fields input[type="number"] {
+      width: auto;
+    }
+    .fx-sep {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+    .fx-badge {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--accent);
+      background: rgba(200,240,100,0.08);
+      border: 1px solid rgba(200,240,100,0.2);
+      border-radius: 6px;
+      padding: 3px 8px;
+    }
   </style>
 </head>
 <body>
@@ -593,6 +673,31 @@
         <option value="MAD,MAD,ma">MAD – Moroccan Dirham (MAD)</option>
         <option value="PHP,₱,ph">PHP – Philippine Peso (₱)</option>
       </select>
+    </div>
+
+    <!-- FX Conversion row -->
+    <div class="fx-row">
+      <label class="fx-toggle">
+        <input type="checkbox" id="fxEnabled" onchange="onFxToggle()" />
+        <span>FX Conversion</span>
+      </label>
+      <div class="fx-fields" id="fxFields" style="display:none;">
+        <span class="fx-sep">Convert all prices → </span>
+        <div class="field" style="min-width:80px;">
+          <input type="text" id="fxTargetSymbol" placeholder="¥" value="¥" style="width:60px;padding:8px 10px;text-align:center;" title="Display symbol" />
+        </div>
+        <div class="field" style="min-width:100px;">
+          <input type="text" id="fxTargetLabel" placeholder="JPY" value="JPY" style="width:80px;padding:8px 10px;text-align:center;font-family:var(--font-mono);" title="Currency label" />
+        </div>
+        <span class="fx-sep">at rate</span>
+        <span class="fx-sep" id="fxSourceLabel" style="color:var(--accent);font-family:var(--font-mono);">1 USD</span>
+        <span class="fx-sep">=</span>
+        <div class="field" style="min-width:100px;">
+          <input type="number" id="fxRate" placeholder="155.00" value="155" min="0.0001" step="any" style="width:100px;padding:8px 10px;" title="FX rate (units of target per 1 source)" />
+        </div>
+        <span id="fxTargetLabelBadge" class="fx-badge">JPY</span>
+      </div>
+      <span id="fxOffNote" style="font-size:0.78rem;color:var(--muted);">Off — prices displayed in scraped currency</span>
     </div>
   </div>
 
@@ -820,6 +925,77 @@
 
   let globalData = null;
 
+  // ── FX Conversion ────────────────────────────────────────────────────────
+  function onFxToggle() {
+    const enabled = document.getElementById('fxEnabled').checked;
+    document.getElementById('fxFields').style.display = enabled ? 'flex' : 'none';
+    document.getElementById('fxOffNote').style.display = enabled ? 'none' : 'inline';
+    updateFxSourceLabel();
+  }
+
+  function updateFxSourceLabel() {
+    // Show the source currency label (scraped currency) in the FX row
+    const currency = confirmedCurrency || detectedCurrency;
+    const el = document.getElementById('fxSourceLabel');
+    if (el) el.textContent = `1 ${currency.currency}`;
+    // Also update the target badge
+    const badge = document.getElementById('fxTargetLabelBadge');
+    const targetLabel = document.getElementById('fxTargetLabel');
+    if (badge && targetLabel) badge.textContent = targetLabel.value || 'JPY';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const tl = document.getElementById('fxTargetLabel');
+    const tb = document.getElementById('fxTargetLabelBadge');
+    if (tl && tb) tl.addEventListener('input', () => { tb.textContent = tl.value || '—'; });
+  });
+
+  function getFxConfig() {
+    if (!document.getElementById('fxEnabled').checked) return null;
+    const rate = parseFloat(document.getElementById('fxRate').value);
+    if (!rate || rate <= 0) return null;
+    return {
+      rate,
+      symbol: document.getElementById('fxTargetSymbol').value || '¥',
+      label: document.getElementById('fxTargetLabel').value || 'JPY',
+    };
+  }
+
+  function applyFx(price, fx) {
+    if (price === null || price === undefined) return null;
+    return Math.round(price * fx.rate);
+  }
+
+  function transformDataWithFx(data, fx) {
+    if (!fx) return data;
+    // Deep clone and convert all prices
+    const results = data.results.map(r => ({
+      ...r,
+      price: applyFx(r.price, fx),
+    }));
+    // Recompute stats from converted prices
+    const monthly = {}, allP = [];
+    for (const r of results) {
+      if (r.price === null) continue;
+      monthly[r.month] = monthly[r.month] || [];
+      monthly[r.month].push(r.price);
+      allP.push(r.price);
+    }
+    const stats = {
+      monthly: Object.fromEntries(
+        Object.entries(monthly).map(([m, p]) => [m, {
+          average: Math.round(p.reduce((a,b)=>a+b,0)/p.length),
+          min: Math.min(...p),
+          max: Math.max(...p),
+          count: p.length,
+        }])
+      ),
+      overall_average: allP.length ? Math.round(allP.reduce((a,b)=>a+b,0)/allP.length) : null,
+      total_nights: allP.length,
+    };
+    return { ...data, results, stats, symbol: fx.symbol, currency: fx.label };
+  }
+
   // ── Status helpers ───────────────────────────────────────────────────────
   function setStatus(msg, isError = false) {
     const bar = document.getElementById('statusBar');
@@ -845,6 +1021,9 @@
     if (new Date(endDate) <= new Date(startDate)) {
       setStatus('End date must be after start date.', true); return;
     }
+
+    // Update FX source label to match confirmed currency
+    updateFxSourceLabel();
 
     document.getElementById('runBtn').disabled = true;
     document.getElementById('results').style.display = 'none';
@@ -874,7 +1053,12 @@
 
       globalData = { ...data, symbol: currency.symbol, currency: currency.currency };
       hideStatus();
-      renderResults(globalData);
+
+      // Apply FX conversion if enabled
+      const fx = getFxConfig();
+      const displayData = fx ? transformDataWithFx(globalData, fx) : globalData;
+
+      renderResults(displayData);
       document.getElementById('noteBox').style.display = 'block';
     } catch (err) {
       setStatus('Could not reach the backend. Make sure the server is running.', true);
@@ -1004,6 +1188,15 @@
       }
     }
 
+    // Row averages (per day of week, across all months)
+    const rowAvg = {};
+    for (const day of DAYS) {
+      const allPricesForDay = months.flatMap(m => grid[day][m]);
+      rowAvg[day] = allPricesForDay.length
+        ? Math.round(allPricesForDay.reduce((a,b) => a+b, 0) / allPricesForDay.length)
+        : null;
+    }
+
     // Percentile colour buckets
     allAvgs.sort((a,b) => a-b);
     function colourClass(val) {
@@ -1024,8 +1217,13 @@
       colAvg[m] = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
     }
 
+    // Grand average (overall)
+    const allPricesAll = results.filter(r => r.price !== null).map(r => r.price);
+    const grandAvg = allPricesAll.length
+      ? Math.round(allPricesAll.reduce((a,b) => a+b, 0) / allPricesAll.length)
+      : null;
+
     // Build table HTML
-    // Header row: Day label col + one col per month
     const shortMonth = m => {
       const parts = m.split(' '); // "July 2026"
       return parts[0].slice(0,3) + '<br><span style="font-size:0.55rem;opacity:0.6">' + parts[1] + '</span>';
@@ -1034,6 +1232,7 @@
     let thead = '<thead><tr>';
     thead += '<th class="day-header">Day</th>';
     for (const m of months) thead += `<th>${shortMonth(m)}</th>`;
+    thead += '<th class="row-avg-header">Avg / Day</th>';
     thead += '</tr></thead>';
 
     // Data rows
@@ -1054,18 +1253,27 @@
           ? `<td class="hm-cell ${cls}" ${tooltip}>${sym}${avg.toLocaleString()}</td>`
           : `<td class="hm-null">—</td>`;
       }
+      // Row average
+      const ra = rowAvg[day];
+      tbody += ra !== null
+        ? `<td class="row-avg-val" title="${day} overall avg across all months">${sym}${ra.toLocaleString()}</td>`
+        : `<td class="hm-null" style="border-left:1px solid var(--border);">—</td>`;
       tbody += '</tr>';
     }
 
     // Column average footer row
     tbody += '<tr class="hm-avg-row">';
-    tbody += '<td class="day-label" style="color:var(--muted);font-size:0.65rem;">Avg</td>';
+    tbody += '<td class="day-label" style="color:var(--muted);font-size:0.65rem;">Avg / Mo</td>';
     for (const m of months) {
       const v = colAvg[m];
       tbody += v !== null
         ? `<td class="avg-val">${sym}${v.toLocaleString()}</td>`
         : '<td class="hm-null">—</td>';
     }
+    // Corner: grand average
+    tbody += grandAvg !== null
+      ? `<td class="corner-avg" title="Grand average across all days and months">${sym}${grandAvg.toLocaleString()}</td>`
+      : '<td class="hm-null" style="border-left:1px solid var(--border);">—</td>';
     tbody += '</tr></tbody>';
 
     document.getElementById('heatmapTable').innerHTML =
@@ -1075,7 +1283,9 @@
   // ── Export CSV ───────────────────────────────────────────────────────────────
   function exportCSV() {
     if (!globalData) return;
-    const { results, stats, hotel, symbol, currency } = globalData;
+    const fx = getFxConfig();
+    const data = fx ? transformDataWithFx(globalData, fx) : globalData;
+    const { results, stats, hotel, symbol, currency } = data;
     const sym = symbol || '$';
     let csv = `Hotel,Date,Day,Price (${currency}/night),Month,Monthly Avg\n`;
     results.forEach(r => {
@@ -1084,7 +1294,7 @@
     });
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
-      download: `hotel-rates-${hotel.replace(/\s+/g,'-').toLowerCase()}.csv`
+      download: `hotel-rates-${hotel.replace(/\s+/g,'-').toLowerCase()}${fx ? `-${fx.label}` : ''}.csv`
     });
     a.click();
     URL.revokeObjectURL(a.href);
