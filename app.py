@@ -487,7 +487,91 @@ def scrape():
         return jsonify({"error": str(ex), "trace": traceback.format_exc()}), 500
 
 
-@app.route("/health")
+@app.route("/api/dump-raw", methods=["POST"])
+def dump_raw():
+    """
+    Diagnostic: runs a real browser session + one batchexecute call and returns
+    the fully parsed JSON structure so you can inspect exactly what each index contains.
+    POST body: { "hotel_name": "...", "year": 2026, "month": 7, "currency": "USD", "gl": "us", "guests": 2 }
+    """
+    import asyncio, traceback
+
+    data     = request.get_json()
+    hotel    = (data.get("hotel_name") or "").strip()
+    year     = int(data.get("year",  2026))
+    month    = int(data.get("month", 7))
+    currency = (data.get("currency") or "USD").strip().upper()
+    gl       = (data.get("gl")       or "us").strip().lower()
+    guests   = max(1, min(int(data.get("guests", 2)), 6))
+
+    if not hotel:
+        return jsonify({"error": "hotel_name required"}), 400
+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            session, debug = loop.run_until_complete(_dump_session(hotel, currency, gl, guests))
+        finally:
+            loop.close()
+
+        if not session["token"]:
+            return jsonify({"error": "No token found", "debug": debug})
+
+        status, body = batchexecute(
+            session["token"], year, month,
+            session["cookies"], session.get("f_sid"), session.get("bl"),
+            currency=currency, gl=gl, guests=guests
+        )
+
+        # Parse outer wrapper
+        m = re.search(r'\["wrb\.fr","yY52ce","(.+?)",null,null,null', body, re.DOTALL)
+        if not m:
+            return jsonify({
+                "error": "wrb.fr pattern not found in response",
+                "status": status,
+                "body_preview": body[:500],
+                "debug": debug,
+            })
+
+        try:
+            parsed = json.loads(json.loads('"' + m.group(1) + '"'))
+        except Exception as e:
+            return jsonify({"error": f"JSON parse failed: {e}", "debug": debug})
+
+        # Dump the first 3 entries with ALL their indices labelled
+        entries_dump = []
+        raw_entries = parsed[1] if len(parsed) > 1 else []
+        for i, entry in enumerate(raw_entries[:5]):
+            entry_info = {"entry_index": i, "total_indices": len(entry), "indices": {}}
+            for j, val in enumerate(entry):
+                entry_info["indices"][str(j)] = val
+            entries_dump.append(entry_info)
+
+        # Also run current parse_prices so we can compare
+        current_prices = parse_prices(body)
+
+        return jsonify({
+            "status": status,
+            "token": session["token"][:20] + "...",
+            "total_entries": len(raw_entries),
+            "parsed_top_level_keys": len(parsed),
+            "entries_sample": entries_dump,
+            "current_parse_prices_result": dict(list(current_prices.items())[:10]),
+            "debug": debug,
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": traceback.format_exc()})
+
+
+async def _dump_session(hotel_name, currency, gl, guests):
+    debug = []
+    session = await get_session(hotel_name, debug, gl=gl, currency=currency, guests=guests)
+    return session, debug
+
+
+
 def health():
     return jsonify({"status":"ok","proxy_configured": bool(os.environ.get("PROXY_URL"))})
 
