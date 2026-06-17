@@ -73,10 +73,10 @@ GL_COUNTRY_CODE = {
     "mv":"MV","au":"AU","nz":"NZ","za":"ZA","ma":"MA",
 }
 
-def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg"):
+def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=2):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, 1], None, token, currency]),
+        json.dumps([None, [start, end, guests], None, token, currency]),
         None, "generic"]]])
     tz  = GL_TIMEZONE.get(gl, "0")
     cc  = GL_COUNTRY_CODE.get(gl, "SG")
@@ -90,7 +90,7 @@ def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://www.google.com/travel/search",
         "x-same-domain": "1",
-        "x-goog-ext-259736195-jspb": f'["en-US","{cc}","{currency}",1,null,[{tz}],null,null,7,[]]',
+        "x-goog-ext-259736195-jspb": f'["en-US","{cc}","{currency}",{guests},null,[{tz}],null,null,7,[]]',
         "x-goog-ext-190139975-jspb": f'["{cc}","ZZ","ZwswOw=="]',
     }
     r = requests.post(
@@ -313,7 +313,7 @@ def test_playwright():
 
 # ─── main scrape ─────────────────────────────────────────────────────────────
 
-async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
+async def get_session(hotel_name, debug, gl="sg", currency="SGD", guests=2):
     from playwright.async_api import async_playwright
     import time
 
@@ -354,7 +354,7 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
         t0 = time.time()
         try:
             await page.goto(
-                f"https://www.google.com/travel/search?q={quote(hotel_name)}&hl=en&gl={gl}&curr={currency}",
+                f"https://www.google.com/travel/search?q={quote(hotel_name)}&hl=en&gl={gl}&curr={currency}&num_adults={guests}",
                 wait_until="commit", timeout=60000
             )
             debug.append(f"Page committed at {time.time()-t0:.1f}s")
@@ -397,13 +397,13 @@ async def get_session(hotel_name, debug, gl="sg", currency="SGD"):
     return session
 
 
-async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg"):
+async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg", guests=2):
     start = datetime.strptime(start_date, "%Y-%m-%d").date()
     end   = datetime.strptime(end_date, "%Y-%m-%d").date()
     debug = []
 
-    debug.append("Step 1: Getting browser session...")
-    session = await get_session(hotel_name, debug, gl=gl, currency=currency)
+    debug.append(f"Step 1: Getting browser session ({guests} guest{'s' if guests != 1 else ''})...")
+    session = await get_session(hotel_name, debug, gl=gl, currency=currency, guests=guests)
 
     if not session["token"]:
         return [], debug + [
@@ -419,7 +419,7 @@ async def scrape_prices(hotel_name, start_date, end_date, currency="SGD", gl="sg
         status, body = batchexecute(
             session["token"], year, month,
             session["cookies"], session.get("f_sid"), session.get("bl"),
-            currency=currency, gl=gl
+            currency=currency, gl=gl, guests=guests
         )
         prices = parse_prices(body)
         debug.append(f"  {year}-{month:02d}: HTTP {status}, {len(prices)} prices")
@@ -460,6 +460,10 @@ def scrape():
     e        = (data.get("end_date")   or "").strip()
     currency = (data.get("currency")   or "USD").strip().upper()
     gl       = (data.get("gl")         or "us").strip().lower()
+    try:
+        guests = max(1, min(int(data.get("guests", 2)), 6))
+    except (TypeError, ValueError):
+        guests = 2
     if not hotel or not s or not e:
         return jsonify({"error": "Missing fields"}), 400
     try:
@@ -472,10 +476,12 @@ def scrape():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            results, debug = loop.run_until_complete(scrape_prices(hotel, s, e, currency=currency, gl=gl))
+            results, debug = loop.run_until_complete(
+                scrape_prices(hotel, s, e, currency=currency, gl=gl, guests=guests)
+            )
         finally:
             loop.close()
-        return jsonify({"hotel":hotel,"start_date":s,"end_date":e,
+        return jsonify({"hotel":hotel,"start_date":s,"end_date":e,"guests":guests,
                         "results":results,"stats":calc_stats(results),"debug":debug})
     except Exception as ex:
         import traceback
