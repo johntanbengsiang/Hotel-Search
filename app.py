@@ -50,19 +50,19 @@ def parse_prices(text):
                 # entry[8]: [[check_in_y, check_in_m, check_in_d],
                 #             [check_out_y, check_out_m, check_out_d],
                 #             nights, ...]
-                ci      = entry[8][0]   # check-in date [y, m, d]
-                nights  = entry[8][2]   # number of nights in this window
-                # entry[1]: ["$display", "$display_high", float_exact, null, int_rounded]
-                # index [4] is the rounded per-night rate (what Google calendar shows)
-                price   = entry[1][4]
-                if price is None:
-                    # fallback to float then strip non-digits from display string
-                    price = int(entry[1][2]) if entry[1][2] is not None else int(re.sub(r'[^\d]', '', entry[1][0]))
+                ci     = entry[8][0]   # check-in date [y, m, d]
+                nights = entry[8][2]   # number of nights in this window
+
+                # entry[44]: [base_price, tax_amount, fees, tax_inclusive_total]
+                # entry[1][4]: rounded base rate (excl. tax) — what we were using before
+                # Google's calendar shows tax-inclusive prices, so use entry[44][3]
+                price_with_tax = entry[44][3]   # exact float, tax-inclusive
+                price = round(price_with_tax)
+
                 date_key = f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"
-                # If API returns multi-night windows despite nights=1 in payload,
-                # store only if we don't already have a better (1-night) entry
+                # Prefer 1-night entries if API ever returns mixed windows
                 if date_key not in results or nights == 1:
-                    results[date_key] = int(price)
+                    results[date_key] = price
             except:
                 pass
     except:
