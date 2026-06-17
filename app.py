@@ -36,8 +36,7 @@ def months_in_range(start: date, end: date):
     return months
 
 def month_window(year, month):
-    pyr, pm = (year-1, 12) if month == 1 else (year, month-1)
-    return [pyr, pm, monthrange(pyr, pm)[1]], [year, month, monthrange(year, month)[1]]
+    return [year, month, 1], [year, month, monthrange(year, month)[1]]
 
 def parse_prices(text):
     results = {}
