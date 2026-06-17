@@ -47,11 +47,26 @@ def parse_prices(text):
         parsed = json.loads(json.loads('"' + m.group(1) + '"'))
         for entry in parsed[1]:
             try:
-                price = int(re.sub(r'[^\d]', '', entry[1][0]))
-                ci = entry[8][0]
-                results[f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"] = price
-            except: pass
-    except: pass
+                # entry[8]: [[check_in_y, check_in_m, check_in_d],
+                #             [check_out_y, check_out_m, check_out_d],
+                #             nights, ...]
+                ci      = entry[8][0]   # check-in date [y, m, d]
+                nights  = entry[8][2]   # number of nights in this window
+                # entry[1]: ["$display", "$display_high", float_exact, null, int_rounded]
+                # index [4] is the rounded per-night rate (what Google calendar shows)
+                price   = entry[1][4]
+                if price is None:
+                    # fallback to float then strip non-digits from display string
+                    price = int(entry[1][2]) if entry[1][2] is not None else int(re.sub(r'[^\d]', '', entry[1][0]))
+                date_key = f"{ci[0]}-{ci[1]:02d}-{ci[2]:02d}"
+                # If API returns multi-night windows despite nights=1 in payload,
+                # store only if we don't already have a better (1-night) entry
+                if date_key not in results or nights == 1:
+                    results[date_key] = int(price)
+            except:
+                pass
+    except:
+        pass
     return results
 
 # Currency → Google locale mapping
@@ -75,7 +90,7 @@ GL_COUNTRY_CODE = {
 def batchexecute(token, year, month, cookies=None, f_sid=None, bl=None, currency="SGD", gl="sg", guests=2):
     start, end = month_window(year, month)
     freq = json.dumps([[["yY52ce",
-        json.dumps([None, [start, end, guests], None, token, currency]),
+        json.dumps([None, [start, end, 1], None, token, currency]),
         None, "generic"]]])
     tz  = GL_TIMEZONE.get(gl, "0")
     cc  = GL_COUNTRY_CODE.get(gl, "SG")
