@@ -630,6 +630,15 @@
         <label>End Date</label>
         <input type="date" id="endDate" oninput="onDateChange()" />
       </div>
+      <div class="field" style="min-width:100px;">
+        <label>Guests</label>
+        <select id="guestsCount" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-size:0.9rem;font-family:var(--font-sans);width:100%;cursor:pointer;">
+          <option value="1">1 adult</option>
+          <option value="2" selected>2 adults</option>
+          <option value="3">3 adults</option>
+          <option value="4">4 adults</option>
+        </select>
+      </div>
       <div class="field" style="min-width:120px;">
         <label>Range</label>
         <div id="dayCount" style="font-family:var(--font-mono);font-size:0.82rem;padding:12px 0;color:var(--accent);line-height:1.4;">—</div>
@@ -995,7 +1004,6 @@
     };
     return { ...data, results, stats, symbol: fx.symbol, currency: fx.label };
   }
-
   // ── Status helpers ───────────────────────────────────────────────────────
   function setStatus(msg, isError = false) {
     const bar = document.getElementById('statusBar');
@@ -1014,6 +1022,7 @@
     const startDate = document.getElementById('startDate').value;
     const endDate   = document.getElementById('endDate').value;
     const currency  = confirmedCurrency || detectedCurrency;
+    const guests    = parseInt(document.getElementById('guestsCount').value, 10);
 
     if (!hotel || !startDate || !endDate) {
       setStatus('Please fill in all fields.', true); return;
@@ -1028,7 +1037,7 @@
     document.getElementById('runBtn').disabled = true;
     document.getElementById('results').style.display = 'none';
     document.getElementById('noteBox').style.display = 'none';
-    setStatus(`Launching browser for "${hotel}" (${currency.currency}) — ~15s…`);
+    setStatus(`Launching browser for "${hotel}" (${currency.currency}, ${guests} guest${guests !== 1 ? 's' : ''}) — ~15s…`);
 
     try {
       const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5050' : '';
@@ -1041,6 +1050,7 @@
           end_date:   endDate,
           currency:   currency.currency,
           gl:         currency.gl,
+          guests:     guests,
         }),
       });
 
@@ -1051,7 +1061,7 @@
         return;
       }
 
-      globalData = { ...data, symbol: currency.symbol, currency: currency.currency };
+      globalData = { ...data, symbol: currency.symbol, currency: currency.currency, guests };
       hideStatus();
 
       // Apply FX conversion if enabled
@@ -1071,9 +1081,10 @@
   function renderResults(data) {
     const { results, stats, hotel, symbol, currency } = data;
     const sym = symbol || '$';
+    const guests = data.guests || 2;
     const priceResults = results.filter(r => r.price !== null);
 
-    document.getElementById('rateHeader').textContent = `Rate (${currency}/night)`;
+    document.getElementById('rateHeader').textContent = `Rate (${currency}/night · ${guests} guest${guests !== 1 ? 's' : ''})`;
 
     document.getElementById('statsRow').innerHTML = `
       <div class="stat-card">
