@@ -26,7 +26,7 @@ RUN chown -R appuser:appuser /app
 
 USER appuser
 
-ENV PORT=10000
-EXPOSE 10000
+ENV PORT=7860
+EXPOSE 7860
 
 CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 1 app:app
