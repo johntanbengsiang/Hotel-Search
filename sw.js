@@ -1,4 +1,4 @@
-// This empty service worker tricks Chrome into allowing a true PWA installation
 self.addEventListener('fetch', (event) => {
-  // Pass-through without caching anything
+  // Satisfies Chrome's requirement for a functional fetch handler
+  event.respondWith(fetch(event.request));
 });
