@@ -1,4 +1,7 @@
 self.addEventListener('fetch', (event) => {
-  // Satisfies Chrome's requirement for a functional fetch handler
+  // Do not intercept API requests to prevent POST body corruption
+  if (event.request.url.includes('/api/')) {
+    return;
+  }
   event.respondWith(fetch(event.request));
 });
