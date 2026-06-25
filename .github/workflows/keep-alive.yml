@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Ping Space
         run: |
-          curl -f https://nhtw-ratescout.hf.space/health || echo "Space waking up..."
+          curl -f https://nhtw-ratescout2.hf.space/health || echo "Space waking up..."
