@@ -1,0 +1,15 @@
+# .github/workflows/keep-alive.yml
+name: Keep HF Space Awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # every 10 minutes
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Space
+        run: |
+          curl -f https://nhtw-ratescout.hf.space/health || echo "Space waking up..."
