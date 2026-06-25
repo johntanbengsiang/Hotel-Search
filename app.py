@@ -593,8 +593,9 @@ async def _dump_session(hotel_name, currency, gl, guests):
 
 
 
+@app.route("/health")
 def health():
-    return jsonify({"status":"ok","proxy_configured": bool(os.environ.get("PROXY_URL"))})
+    return jsonify({"status": "ok", ...})
 
 
 if __name__ == "__main__":
